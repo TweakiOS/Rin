@@ -83,6 +83,19 @@ export const FeedService = (db: DB, env: Env) => new Elysia({ aot: false })
                     type: t.Optional(t.String())
                 })
             })
+            .get('/timeline', async () => {
+                const where = and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+                const feed_list = (await db.query.feeds.findMany({
+                    where: where,
+                    columns: {
+                        id: true,
+                        title: true,
+                        createdAt: true,
+                    },
+                    orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
+                }))
+                return feed_list
+            })
             .post('/', async ({ admin, set, uid, body: { title, alias, listed, content, summary, draft, tags } }) => {
                 if (!admin) {
                     set.status = 403;
@@ -204,6 +217,22 @@ export const FeedService = (db: DB, env: Env) => new Elysia({ aot: false })
                     draft: t.Optional(t.Boolean()),
                     tags: t.Optional(t.Array(t.String()))
                 })
+            })
+            .delete('/:id', async ({ admin, set, uid, params: { id } }) => {
+                const id_num = parseInt(id);
+                const feed = await db.query.feeds.findFirst({
+                    where: eq(feeds.id, id_num)
+                });
+                if (!feed) {
+                    set.status = 404;
+                    return 'Not found';
+                }
+                if (feed.uid !== uid && !admin) {
+                    set.status = 403;
+                    return 'Permission denied';
+                }
+                await db.delete(feeds).where(eq(feeds.id, id_num));
+                return 'Deleted';
             })
 
     );
