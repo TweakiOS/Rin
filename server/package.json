@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "cf:deploy": "wrangler deploy",
-    "dev": "wrangler dev --port 8787",
+    "dev": "bun wrangler dev --port 11498",
     "cf-typegen": "wrangler types",
     "db:gen": "bun drizzle-kit generate",
     "preview": "wrangler pages dev dist --compatibility-date=2023-12-20"
@@ -32,7 +32,13 @@
     "drizzle-orm": "^0.30.10",
     "elysia": "^1.0.21",
     "elysia-oauth2": "^1.2.0",
+    "feed": "^4.2.2",
     "jose": "^5.3.0",
+    "rehype-stringify": "^10.0.0",
+    "remark-gfm": "^4.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.0",
+    "unified": "^11.0.4",
     "url": "^0.11.3"
   },
   "trustedDependencies": [

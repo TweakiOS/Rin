@@ -1,21 +1,13 @@
 import { useContext, useEffect, useRef, useState } from "react"
+import { Helmet } from 'react-helmet'
 import { Link, useSearch } from "wouter"
 import { FeedCard } from "../components/feed_card"
 import { Waiting } from "../components/loading"
 import { client } from "../main"
 import { ProfileContext } from "../state/profile"
 import { headersWithAuth } from "../utils/auth"
-
-function tryInt(defaultValue: number, ...args: (string | number | undefined | null)[]): number {
-    for (const v of args) {
-        if (typeof v === "number") return v
-        if (typeof v === "string") {
-            const n = parseInt(v)
-            if (!isNaN(n)) return n
-        }
-    }
-    return defaultValue
-}
+import { siteName } from "../utils/constants"
+import { tryInt } from "../utils/int"
 
 type FeedsData = {
     size: number,
@@ -33,6 +25,7 @@ export function FeedsPage() {
     const query = new URLSearchParams(useSearch());
     const profile = useContext(ProfileContext);
     const [listState, _setListState] = useState<FeedType>(query.get("type") as FeedType || 'normal')
+    const [status, setStatus] = useState<'loading' | 'idle'>('idle')
     const [feeds, setFeeds] = useState<FeedsMap>({
         draft: { size: 0, data: [], hasNext: false },
         unlisted: { size: 0, data: [], hasNext: false },
@@ -55,6 +48,7 @@ export function FeedsPage() {
                     ...feeds,
                     [type]: data
                 })
+                setStatus('idle')
             }
         })
     }
@@ -66,14 +60,23 @@ export function FeedsPage() {
         if (type !== listState) {
             _setListState(type)
         }
+        setStatus('loading')
         fetchFeeds(type)
         ref.current = key
     }, [query.get("page"), query.get("type")])
     return (
         <>
-            <Waiting wait={feeds}>
-                <div className="w-full flex flex-col justify-center items-center mb-8">
-                    <div className="wauto text-start text-black dark:text-white p-4 text-4xl font-bold">
+            <Helmet>
+                <title>{`${"文章"} - ${process.env.NAME}`}</title>
+                <meta property="og:site_name" content={siteName} />
+                <meta property="og:title" content={"文章"} />
+                <meta property="og:image" content={process.env.AVATAR} />
+                <meta property="og:type" content="article" />
+                <meta property="og:url" content={document.URL} />
+            </Helmet>
+            <Waiting for={feeds.draft.size + feeds.normal.size + feeds.unlisted.size > 0 || status === 'idle'}>
+                <main className="w-full flex flex-col justify-center items-center mb-8">
+                    <div className="wauto text-start text-black dark:text-white py-4 text-4xl font-bold">
                         <p>
                             {listState === 'draft' ? "草稿箱" : listState === 'normal' ? "文章" : "未列出"}
                         </p>
@@ -93,25 +96,27 @@ export function FeedsPage() {
                             }
                         </div>
                     </div>
-                    {feeds[listState].data.map(({ id, ...feed }: any) => (
-                        <FeedCard key={id} id={id} {...feed} />
-                    ))}
-                    <div className="wauto flex flex-row items-center mt-4">
-                        {page > 1 &&
-                            <Link href={`/?type=${listState}&page=${(page - 1)}`}
-                                className={`text-sm font-normal rounded-full px-4 py-2 text-white bg-theme`}>
-                                上一页
-                            </Link>
-                        }
-                        <div className="flex-1" />
-                        {feeds[listState]?.hasNext &&
-                            <Link href={`/?type=${listState}&page=${(page + 1)}`}
-                                className={`text-sm font-normal rounded-full px-4 py-2 text-white bg-theme`}>
-                                下一页
-                            </Link>
-                        }
-                    </div>
-                </div>
+                    <Waiting for={status === 'idle'}>
+                        {feeds[listState].data.map(({ id, ...feed }: any) => (
+                            <FeedCard key={id} id={id} {...feed} />
+                        ))}
+                        <div className="wauto flex flex-row items-center mt-4 ani-show">
+                            {page > 1 &&
+                                <Link href={`/?type=${listState}&page=${(page - 1)}`}
+                                    className={`text-sm font-normal rounded-full px-4 py-2 text-white bg-theme`}>
+                                    上一页
+                                </Link>
+                            }
+                            <div className="flex-1" />
+                            {feeds[listState]?.hasNext &&
+                                <Link href={`/?type=${listState}&page=${(page + 1)}`}
+                                    className={`text-sm font-normal rounded-full px-4 py-2 text-white bg-theme`}>
+                                    下一页
+                                </Link>
+                            }
+                        </div>
+                    </Waiting>
+                </main>
             </Waiting>
         </>
     )

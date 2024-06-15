@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
+import Popup from 'reactjs-popup';
 type ThemeMode = 'light' | 'dark' | 'system';
 function Footer() {
     const [modeState, setModeState] = useState<ThemeMode>('system');
 
-    useEffect(()=>{
+    useEffect(() => {
         const mode = localStorage.getItem('theme') as ThemeMode || 'system';
         setModeState(mode);
         setMode(mode);
-    },[])
+    }, [])
 
     const setMode = (mode: ThemeMode) => {
         setModeState(mode);
@@ -28,9 +29,37 @@ function Footer() {
 
     return (
         <footer>
-            <div className="flex flex-col mb-8 space-y-2 justify-center items-center h-16 t-primary">
-                <p className="text-sm text-neutral-500 font-normal">
-                    © 2024 Powered by <a className='hover:underline' href="https://github.com/OXeu/Rin" target="_blank">Rin</a>
+            <div className="flex flex-col mb-8 space-y-2 justify-center items-center h-16 t-primary ani-show">
+                <p className='text-sm text-neutral-500 font-normal link-line'>
+                    <span>
+                        © 2024 Powered by <a className='hover:underline' href="https://github.com/OXeu/Rin" target="_blank">Rin</a>
+                    </span>
+                    {process.env.RSS_ENABLE === "true" && <>
+                        <Spliter />
+                        <Popup trigger={
+                            <button className="hover:underline" type="button">
+                                RSS
+                            </button>
+                        }
+                            position="top center"
+                            arrow={false}
+                            closeOnDocumentClick>
+                            <div className="rounded-xl p-4 bg-w text-sm t-secondary font-normal">
+                                <p className='font-bold t-primary'>
+                                    RSS 订阅地址
+                                </p>
+                                <a href='/sub/rss.xml'>
+                                    RSS
+                                </a> <Spliter />
+                                <a href='/sub/atom.xml'>
+                                    Atom
+                                </a> <Spliter />
+                                <a href='/sub/rss.json'>
+                                    JSON
+                                </a>
+                            </div>
+                        </Popup>
+                    </>}
                 </p>
                 <div className="w-fit-content inline-flex rounded-full border border-zinc-200 p-[3px] dark:border-zinc-700">
                     <ThemeButton mode='light' current={modeState} label="Toggle light mode" icon="ri-sun-line" onClick={setMode} />
@@ -42,9 +71,16 @@ function Footer() {
     );
 }
 
+function Spliter() {
+    return (<span className='px-1'>
+        |
+    </span>
+    )
+}
+
 function ThemeButton({ current, mode, label, icon, onClick }: { current: ThemeMode, label: string, mode: ThemeMode, icon: string, onClick: (mode: ThemeMode) => void }) {
     return (<button aria-label={label} type="button" onClick={() => onClick(mode)}
-        className={`rounded-inherit inline-flex h-[32px] w-[32px] items-center justify-center border-0 t-primary ${current === mode ? "bg-w rounded-full shadow-xl shadow-color" : ""}`}>
+        className={`rounded-inherit inline-flex h-[32px] w-[32px] items-center justify-center border-0 t-primary ${current === mode ? "bg-w rounded-full shadow-xl shadow-light" : ""}`}>
         <i className={`${icon}`} />
     </button>)
 }

@@ -1,63 +1,99 @@
-# 为 Rin 做贡献
+# Contribute to Rin
 
-我们很乐意接受您对这个项目的补丁和贡献。您只需遵循一些小指南即可。
+English | [简体中文](./CONTRIBUTING_zh_CN.md)
 
-# Commit-msg 钩子
-我们在 scripts/commit-msg.sh 中有一个示例 commit-msg hook。请运行以下命令设置：
+We are happy to accept your patches and contributions to this project. You just need to follow some small guidelines.
+
+# Commit-msg hooks
+
+We have a sample commit-msg hook in `scripts/commit-msg.sh`. Please run the following command to set it up:
 
 ```sh
 ln -s ../../scripts/commit-msg.sh commit-msg
 ```
 
-这将在每次提交之前运行以下检查：
+On Windows, copy the `commit-msg.sh` file directly to `.git/hooks/commit-msg`.
 
-1. `tsc` 检查前端代码是否存在语法错误与未使用变量与引用
-2. 检查提交消息是否以以下之一开头：feat|chore|fix|docs|ci|style|test|pref
-
-如果您想跳过钩子，请使用 `--no-verify` 选项运行 `git commit`。
-
-# 设置开发环境
-
-1. Fork & Clone 仓库
-
-2. 安装 [Node](https://nodejs.org/en/download/package-manager) & [Bun](https://bun.sh/)
-
-3. 安装依赖项
-```sh
-bun i
+```powershell
+cp .\scripts\commit-msg.sh .\.git\hooks\commit-msg
 ```
 
-4. 将 `wrangler.example.toml` 文件复制到 `wrangler.toml` 并填写必要信息
+This will run the following checks before each commit:
 
-5. 将 `client/.env.example` 文件复制到 `client/.env` 并填写必要信息
+1. `tsc` Checks the code for syntax errors and unused variables and references.
+2. check that the commit message starts with one of the following: feature|chore|fix|docs|ci|style|test|pref
 
-5. 启动开发服务器
-```sh
-bun dev
-```
+If you want to skip the hook, run `git commit` with the `--no-verify` option.
 
-6. 为了更好地控制开发服务器，您可以分别在客户端目录和服务器目录中运行 dev 命令：
-```sh
-# tty1
-cd client
-bun dev
+# Setting up your development environment
 
-# tty2
-cd server
-bun dev
-```
+1. Fork & Clone the repository
 
-# 提交更改
+2. Install [Node](https://nodejs.org/en/download/package-manager) & [Bun](https://bun.sh/)
 
-1. 对于简单的补丁，只需一分钟即可有人对其进行审核。
+3. Install dependencies
+    ```sh
+    bun i
+    ```
 
-2. 在 PR 准备好进行审核后，不要强制推送小的更改。这样做会迫使维护者重新阅读您的整个 PR，从而延迟审核过程。
+4. Copy the `wrangler.example.toml` file to `wrangler.toml` and fill in the necessary information
+   > [!TIP]   
+   > Normally, you only need to fill in the `database_name` and `database_id` fields.\
+   > S3 configuration is not required, but if you want to use the image upload feature, you need to fill in the S3
+   configuration.
 
-3. 始终保持 CI 为绿色。
+5. Copy the `client/.env.example` file to `client/.env` and change the necessary configuration.
+   > [!TIP]   
+   > Typically, you only need to fill in `AVATAR`, `NAME` and `DESCRIPTION`.
 
-4. 如果 CI 在您的 PR 上失败，请不要推送。即使您认为这不是补丁的错误。如果其他原因破坏了 CI，请在推送之前帮助修复根本原因。
+6. Perform the database migration
+   > [!TIP]  
+   > If your database name (`database_name` in `wrangler.toml`) is not `rin`\
+   > Please modify the `DB_NAME` field in `scripts/dev-migrator.sh` before performing the migration
+    ```sh
+    bun m
+    ```
 
-*开始愉快的写代码吧！*
+7. Configuring the `.dev.vars' file
+   Copy `.dev.example.vars` to `.dev.vars` and fill in the required information
+   > [!TIP]   
+   > Typically, you need to fill in the `RIN_GITHUB_CLIENT_ID` and `RIN_GITHUB_CLIENT_SECRET` as well as
+   the `JWT_SECRET` fields.
+   > In the development environment, you need to create a separate GitHub OAuth service with a callback address
+   of `http://localhost:11498/user/github/callback` \
+   > If you have changed the listening port of the server manually, please also change the port number in the callback
+   address.
 
-# 代码审核
-所有提交，包括项目成员的提交，都需要审核。我们使用 GitHub 拉取请求来实现此目的。有关使用拉取请求的更多信息，请参阅 GitHub 帮助。
+8. Start the development server
+    ```sh
+    bun dev
+    ```
+
+9. For better control of the development server, you can run the client and server dev commands in two separate
+   terminals:
+    ```sh
+    # tty1
+    bun dev:client
+    
+    # tty2
+    bun dev:server
+    ```
+
+# Committing Changes
+
+1. for simple patches, they can usually be reviewed within 10 minutes during the day in the UTC+8 time zone. 2.
+
+2. Do not force push minor changes after the PR is ready for review. Doing so forces maintainers to re-read your entire
+   PR, which delays the review process. 3.
+
+3. Always keep the CI green.
+
+4. If the CI fails on your PR, do not push it. Even if you don't think it's the patch's fault. If something else is
+   breaking the CI, help fix the root cause before you push.
+
+*Start writing code happily!*
+
+# Code review
+
+All commits, including those from project members, need to be reviewed. We use GitHub pull requests for this purpose.
+For more information on using pull requests, see the GitHub Help.
