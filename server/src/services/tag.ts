@@ -2,26 +2,72 @@ import { eq } from "drizzle-orm";
 import Elysia from "elysia";
 import type { DB } from "../_worker";
 import { feedHashtags, hashtags } from "../db/schema";
+import { getDB } from "../utils/di";
 
-export const TagService = (db: DB) => new Elysia({ aot: false })
-    .group('/tag', (group) =>
-        group
-            .get('/', async () => {
-                const tag_list = await db.query.hashtags.findMany();
-                return tag_list;
-            })
-            .get('/:name', async ({ set, params: { name } }) => {
-                const tag = await db.query.hashtags.findFirst({
-                    where: eq(hashtags.name, name),
-                    with: { feeds: true }
-                });
-                if (!tag) {
-                    set.status = 404;
-                    return 'Not found';
-                }
-                return tag;
-            })
-    );
+export function TagService() {
+    const db: DB = getDB();
+    return new Elysia({ aot: false })
+        .group('/tag', (group) =>
+            group
+                .get('/', async () => {
+                    const tag_list = await db.query.hashtags.findMany({
+                        with: {
+                            feeds: {
+                                columns: { feedId: true }
+                            }
+                        }
+                    });
+                    return tag_list.map((tag) => {
+                        return {
+                            ...tag,
+                            feeds: tag.feeds.length
+                        }
+                    })
+                })
+                .get('/:name', async ({ set, params: { name } }) => {
+                    const nameDecoded = decodeURI(name)
+                    const tag = await db.query.hashtags.findFirst({
+                        where: eq(hashtags.name, nameDecoded),
+                        with: {
+                            feeds: {
+                                with: {
+                                    feed: {
+                                        columns: { id: true, title: true, summary: true, content: true, createdAt: true, updatedAt: true },
+                                        with: {
+                                            user: {
+                                                columns: { id: true, username: true, avatar: true }
+                                            },
+                                            hashtags: {
+                                                columns: {},
+                                                with: {
+                                                    hashtag: {
+                                                        columns: { id: true, name: true }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    const tagFeeds = tag?.feeds.map((tag) => {
+                        return {
+                            ...tag.feed,
+                            hashtags: tag.feed.hashtags.map((tag) => tag.hashtag)
+                        }
+                    })
+                    if (!tag) {
+                        set.status = 404;
+                        return 'Not found';
+                    }
+                    return {
+                        ...tag,
+                        feeds: tagFeeds
+                    };
+                })
+        );
+}
 
 
 export async function bindTagToPost(db: DB, feedId: number, tags: string[]) {

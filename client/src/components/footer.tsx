@@ -1,9 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import Popup from 'reactjs-popup';
+import { ClientConfigContext } from '../state/config';
+import { Helmet } from "react-helmet";
+import { siteName } from '../utils/constants';
+import { useTranslation } from "react-i18next";
+
 type ThemeMode = 'light' | 'dark' | 'system';
 function Footer() {
+    const { t } = useTranslation()
     const [modeState, setModeState] = useState<ThemeMode>('system');
-
+    const config = useContext(ClientConfigContext);
+    const footerHtml = config.get<string>('footer');
     useEffect(() => {
         const mode = localStorage.getItem('theme') as ThemeMode || 'system';
         setModeState(mode);
@@ -25,16 +32,23 @@ function Footer() {
                 document.documentElement.setAttribute('data-color-mode', 'light');
             }
         }
+        window.dispatchEvent(new Event("colorSchemeChange"));
     };
 
     return (
         <footer>
-            <div className="flex flex-col mb-8 space-y-2 justify-center items-center h-16 t-primary ani-show">
+            <Helmet>
+                <link rel="alternate" type="application/rss+xml" title={siteName} href="/sub/rss.xml" />
+                <link rel="alternate" type="application/atom+xml" title={siteName} href="/sub/atom.xml" />
+                <link rel="alternate" type="application/json" title={siteName} href="/sub/rss.json" />
+            </Helmet>
+            <div className="flex flex-col mb-8 space-y-2 justify-center items-center t-primary ani-show">
+                {footerHtml && <div dangerouslySetInnerHTML={{ __html: footerHtml }} />}
                 <p className='text-sm text-neutral-500 font-normal link-line'>
                     <span>
-                        © 2024 Powered by <a className='hover:underline' href="https://github.com/OXeu/Rin" target="_blank">Rin</a>
+                        © 2024 Powered by <a className='hover:underline' href="https://github.com/openRin/Rin" target="_blank">Rin</a>
                     </span>
-                    {process.env.RSS_ENABLE === "true" && <>
+                    {config.get<boolean>('rss') && <>
                         <Spliter />
                         <Popup trigger={
                             <button className="hover:underline" type="button">
@@ -44,19 +58,22 @@ function Footer() {
                             position="top center"
                             arrow={false}
                             closeOnDocumentClick>
-                            <div className="rounded-xl p-4 bg-w text-sm t-secondary font-normal">
+                            <div className="border-card">
                                 <p className='font-bold t-primary'>
-                                    RSS 订阅地址
+                                    {t('footer.rss')}
                                 </p>
-                                <a href='/sub/rss.xml'>
-                                    RSS
-                                </a> <Spliter />
-                                <a href='/sub/atom.xml'>
-                                    Atom
-                                </a> <Spliter />
-                                <a href='/sub/rss.json'>
-                                    JSON
-                                </a>
+                                <p>
+                                    <a href='/sub/rss.xml'>
+                                        RSS
+                                    </a> <Spliter />
+                                    <a href='/sub/atom.xml'>
+                                        Atom
+                                    </a> <Spliter />
+                                    <a href='/sub/rss.json'>
+                                        JSON
+                                    </a>
+                                </p>
+
                             </div>
                         </Popup>
                     </>}
