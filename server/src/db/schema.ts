@@ -140,6 +140,89 @@ export const cache = sqliteTable("cache", {
     typeKeyIdx: index("cache_type_key_idx").on(table.type, table.key),
 }));
 
+// ========== 知识树相关表（aistock.fyi 扩展） ==========
+
+/** 统一知识实体：概念 / 组件 / 公司 / 产品 */
+export const entities = sqliteTable("entities", {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    slug: text("slug").notNull().unique(),          // ai-server, gpu, nvidia, h100
+    name: text("name").notNull(),                   // AI 服务器 / GPU / NVIDIA
+    name_cn: text("name_cn"),                       // 中文名
+    type: text("type").notNull(),                   // concept | component | company | product
+    description: text("description").default("").notNull(),
+    summary: text("summary").default("").notNull(), // 基本面/技术摘要
+    data: text("data", { mode: "json" }).default("{}").notNull(), // 灵活存规格、财务等
+    parent_id: integer("parent_id"),                // 简单树父子（可选）
+    sort_order: integer("sort_order").default(0).notNull(),
+    createdAt: created_at,
+    updatedAt: updated_at,
+}, (table) => ({
+    slugIdx: index("entities_slug_idx").on(table.slug),
+    typeIdx: index("entities_type_idx").on(table.type),
+    parentIdx: index("entities_parent_idx").on(table.parent_id),
+}));
+
+/** 实体之间的关系（多对多 + 关系类型） */
+export const entityRelations = sqliteTable("entity_relations", {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    from_id: integer("from_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+    to_id: integer("to_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+    relation_type: text("relation_type").notNull(), // uses | supplier | product_of | competitor | related
+    createdAt: created_at,
+}, (table) => ({
+    fromIdx: index("entity_relations_from_idx").on(table.from_id),
+    toIdx: index("entity_relations_to_idx").on(table.to_id),
+    uniqueRelation: unique().on(table.from_id, table.to_id, table.relation_type),
+}));
+
+/** 文章（feeds）与实体的关联 */
+export const feedEntities = sqliteTable("feed_entities", {
+    feedId: integer("feed_id").notNull().references(() => feeds.id, { onDelete: "cascade" }),
+    entityId: integer("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+    createdAt: created_at,
+}, (table) => ({
+    feedEntityIdx: index("feed_entities_feed_entity_idx").on(table.feedId, table.entityId),
+    entityFeedIdx: index("feed_entities_entity_feed_idx").on(table.entityId, table.feedId),
+    pk: unique().on(table.feedId, table.entityId),
+}));
+
+// Relations（放在文件末尾现有 relations 附近）
+export const entitiesRelations = relations(entities, ({ many, one }) => ({
+    children: many(entities, { relationName: "parent_child" }),
+    parent: one(entities, {
+        fields: [entities.parent_id],
+        references: [entities.id],
+        relationName: "parent_child",
+    }),
+    outgoingRelations: many(entityRelations, { relationName: "from" }),
+    incomingRelations: many(entityRelations, { relationName: "to" }),
+    feeds: many(feedEntities),
+}));
+
+export const entityRelationsRelations = relations(entityRelations, ({ one }) => ({
+    from: one(entities, {
+        fields: [entityRelations.from_id],
+        references: [entities.id],
+        relationName: "from",
+    }),
+    to: one(entities, {
+        fields: [entityRelations.to_id],
+        references: [entities.id],
+        relationName: "to",
+    }),
+}));
+
+export const feedEntitiesRelations = relations(feedEntities, ({ one }) => ({
+    feed: one(feeds, {
+        fields: [feedEntities.feedId],
+        references: [feeds.id],
+    }),
+    entity: one(entities, {
+        fields: [feedEntities.entityId],
+        references: [entities.id],
+    }),
+}));
+
 export const feedsRelations = relations(feeds, ({ many, one }) => ({
     hashtags: many(feedHashtags),
     user: one(users, {
