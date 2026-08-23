@@ -11,6 +11,7 @@ import { SitemapService } from "../services/sitemap";
 import { BlobService, StorageService } from "../services/storage";
 import { TagService } from "../services/tag";
 import { UserService } from "../services/user";
+import { EntityService } from "../services/entity";
 
 export function registerRoutes(app: RinApp) {
   app.get("/", (c) => c.text("Hi"));
@@ -19,6 +20,7 @@ export function registerRoutes(app: RinApp) {
   app.route("/search", SearchService());
   app.route("/wp", WordPressService());
   app.route("/tag", TagService());
+  app.route("/entity", EntityService());
   app.route("/comment", CommentService());
   app.route("/storage", StorageService());
   app.route("/blob", BlobService());
