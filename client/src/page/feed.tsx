@@ -497,6 +497,7 @@ type Comment = {
   content: string;
   createdAt: Date;
   updatedAt: Date;
+  approved?: number;          // ← 新增
   user?: {
     id: number;
     username: string;
@@ -579,6 +580,9 @@ function CommentItem({
   const profile = useContext(ProfileContext);
   const commenterName = comment.user?.username || comment.guestName || t("anonymous");
   const commenterAvatar = comment.user?.avatar || "/avatar.png";
+  const isPending = comment.approved === 0; // 未审核
+  const canModerate = !!profile?.permission; // 管理员
+
   function deleteComment() {
     showConfirm(
       t("delete.comment.title"),
@@ -595,8 +599,24 @@ function CommentItem({
               });
             }
           });
-      })
+      },
+    );
   }
+
+  function approveComment() {
+    client.comment
+      .approve(comment.id)
+      .then(({ error }) => {
+        if (error) {
+          showAlert(error.value as string);
+        } else {
+          showAlert(t("comment_moderation.approve_success") || "评论已通过", () => {
+            onRefresh();
+          });
+        }
+      });
+  }
+
   return (
     <div className="flex flex-row items-start rounded-xl mt-2">
       <ImageWithFallback
@@ -605,41 +625,26 @@ function CommentItem({
         className="mt-4 h-8 w-8 rounded-full"
       />
       <div className="flex flex-col flex-1 w-0 ml-2 bg-w rounded-xl p-4">
-        <div className="flex min-w-0 flex-row items-center gap-2 flex-wrap">
+        <div className="flex min-w-0 flex-row items-center gap-2">
           <span className="min-w-0 truncate text-base font-bold t-primary">
             {commenterName}
           </span>
-
-          {/* 网站 */}
+          {/* 管理员可见的「待审核」标记 */}
+          {canModerate && isPending && (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+              {t("comment_moderation.guest") || "待审核"}
+            </span>
+          )}
           {comment.guestWebsite && (
             <a
-              href={
-                /^https?:\/\//i.test(comment.guestWebsite)
-                  ? comment.guestWebsite
-                  : `https://${comment.guestWebsite}`
-              }
+              href={comment.guestWebsite}
               target="_blank"
-              rel="noopener noreferrer nofollow ugc"
-              className="shrink-0 text-sm text-theme hover:underline"
-              title={comment.guestWebsite}
+              rel="noopener noreferrer"
+              className="shrink-0 text-gray-400 transition-colors hover:text-theme"
             >
-              <i className="ri-external-link-line mr-0.5" />
-              网站
+              <i className="ri-external-link-line"></i>
             </a>
           )}
-
-          {/* 邮箱 */}
-          {comment.guestEmail && (
-            <a
-              href={`mailto:${comment.guestEmail}`}
-              className="shrink-0 text-sm text-theme hover:underline"
-              title={comment.guestEmail}
-            >
-              <i className="ri-mail-line mr-0.5" />
-              邮箱
-            </a>
-          )}
-
           <div className="flex-1 w-0" />
           <span
             title={new Date(comment.createdAt).toLocaleString()}
@@ -650,7 +655,7 @@ function CommentItem({
         </div>
         <p className="break-words t-primary [overflow-wrap:anywhere]">{comment.content}</p>
         <div className="flex flex-row justify-end">
-          {(profile?.permission || (comment.user && profile?.id == comment.user.id)) && (
+          {(canModerate || (comment.user && profile?.id == comment.user.id)) && (
             <Popup
               arrow={false}
               trigger={
@@ -660,7 +665,19 @@ function CommentItem({
               }
               position="left center"
             >
-              <div className="flex flex-row self-end mr-2">
+              <div className="flex flex-row self-end mr-2 gap-1">
+                {/* 审核通过按钮：仅管理员 + 待审核时显示 */}
+                {canModerate && isPending && (
+                  <button
+                    onClick={approveComment}
+                    aria-label={t("comment_moderation.approve") || "通过"}
+                    title={t("comment_moderation.approve") || "通过"}
+                    className="px-2 py bg-secondary rounded-full hover:bg-green-100 dark:hover:bg-green-900/30"
+                  >
+                    <i className="ri-check-line text-green-600 dark:text-green-400"></i>
+                  </button>
+                )}
+                {/* 删除按钮（原有） */}
                 <button
                   onClick={deleteComment}
                   aria-label={t("delete.comment.title")}

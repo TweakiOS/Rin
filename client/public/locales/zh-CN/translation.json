@@ -33,7 +33,7 @@
     "article": "文章：{{title}}",
     "feed_id": "文章 #{{id}}",
     "no_title": "无标题"
-  }
+  },
   "compat_tasks": {
     "title": "兼容任务",
     "loading": "正在加载兼容任务状态...",
