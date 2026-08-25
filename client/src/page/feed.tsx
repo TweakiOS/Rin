@@ -497,7 +497,7 @@ type Comment = {
   content: string;
   createdAt: Date;
   updatedAt: Date;
-  approved?: number;          // ← 新增
+  approved?: number;          // 新增：0=待审核，1=已通过
   user?: {
     id: number;
     username: string;
@@ -617,6 +617,13 @@ function CommentItem({
       });
   }
 
+  // 处理 website 没有协议的情况
+  const websiteHref = comment.guestWebsite
+    ? /^https?:\/\//i.test(comment.guestWebsite)
+      ? comment.guestWebsite
+      : `https://${comment.guestWebsite}`
+    : null;
+
   return (
     <div className="flex flex-row items-start rounded-xl mt-2">
       <ImageWithFallback
@@ -629,22 +636,38 @@ function CommentItem({
           <span className="min-w-0 truncate text-base font-bold t-primary">
             {commenterName}
           </span>
+
           {/* 管理员可见的「待审核」标记 */}
           {canModerate && isPending && (
             <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
               {t("comment_moderation.guest") || "待审核"}
             </span>
           )}
-          {comment.guestWebsite && (
+
+          {/* 网站链接 */}
+          {websiteHref && (
             <a
-              href={comment.guestWebsite}
+              href={websiteHref}
               target="_blank"
-              rel="noopener noreferrer"
+              rel="noopener noreferrer nofollow ugc"
               className="shrink-0 text-gray-400 transition-colors hover:text-theme"
+              title={comment.guestWebsite}
             >
               <i className="ri-external-link-line"></i>
             </a>
           )}
+
+          {/* 管理员可见的邮箱 mailto 链接 */}
+          {canModerate && comment.guestEmail && (
+            <a
+              href={`mailto:${comment.guestEmail}`}
+              className="shrink-0 text-gray-400 transition-colors hover:text-theme"
+              title={`发邮件给 ${comment.guestEmail}`}
+            >
+              <i className="ri-mail-line"></i>
+            </a>
+          )}
+
           <div className="flex-1 w-0" />
           <span
             title={new Date(comment.createdAt).toLocaleString()}
@@ -653,7 +676,9 @@ function CommentItem({
             {timeago(comment.createdAt)}
           </span>
         </div>
+
         <p className="break-words t-primary [overflow-wrap:anywhere]">{comment.content}</p>
+
         <div className="flex flex-row justify-end">
           {(canModerate || (comment.user && profile?.id == comment.user.id)) && (
             <Popup
@@ -677,7 +702,7 @@ function CommentItem({
                     <i className="ri-check-line text-green-600 dark:text-green-400"></i>
                   </button>
                 )}
-                {/* 删除按钮（原有） */}
+                {/* 删除按钮 */}
                 <button
                   onClick={deleteComment}
                   aria-label={t("delete.comment.title")}

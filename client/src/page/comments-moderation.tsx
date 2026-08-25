@@ -76,7 +76,15 @@ function PendingCommentCard({
               </Link>
             ) : null}
             <span title={new Date(item.createdAt).toLocaleString()}>{timeago(item.createdAt)}</span>
-            {item.guestEmail ? <span>{item.guestEmail}</span> : null}
+            {item.guestEmail ? (
+              <a
+                href={`mailto:${item.guestEmail}`}
+                className="text-theme hover:underline"
+                title={`发邮件给 ${item.guestEmail}`}
+              >
+                {item.guestEmail}
+              </a>
+            ) : null}
             {item.guestWebsite ? (
               <a
                 href={/^https?:\/\//i.test(item.guestWebsite) ? item.guestWebsite : `https://${item.guestWebsite}`}
