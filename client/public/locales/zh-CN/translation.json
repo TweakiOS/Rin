@@ -99,6 +99,7 @@
     },
     "submit": "发表评论",
     "success": "评论成功",
+    "success_pending": "评论已提交，审核通过后将显示",
     "title": "评论",
     "guest_name_required": "昵称不能为空",
     "guest_name_placeholder": "昵称（必填）",

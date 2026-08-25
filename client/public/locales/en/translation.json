@@ -99,6 +99,7 @@
     },
     "submit": "Submit Comment",
     "success": "Comment successful",
+    "success_pending": "Comment submitted, will be displayed after approval",
     "title": "Comment",
     "guest_name_required": "Guest name is required",
     "guest_name_placeholder": "Name (required)",

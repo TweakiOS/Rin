@@ -1,3 +1,5 @@
+import { EntitiesPage } from "../page/entities";
+import { EntityPage } from "../page/entity";
 import type { ReactNode } from "react";
 import { useContext } from "react";
 import type { DefaultParams, PathPattern } from "wouter";
@@ -58,6 +60,14 @@ export function AppRoutes() {
 
       <AppRoute path="/hashtag/:name">
         {(params) => <HashtagPage name={params.name || ""} />}
+      </AppRoute>
+
+      <AppRoute path="/entities">
+        <EntitiesPage />
+      </AppRoute>
+
+      <AppRoute path="/entity/:slug">
+        {(params) => <EntityPage slug={params.slug || ""} />}
       </AppRoute>
 
       <AppRoute path="/search/:keyword">

@@ -413,7 +413,7 @@ function CommentInput({
             setGuestEmail("");
             setGuestWebsite("");
             setError("");
-            showAlert(t("comment.success"), () => {
+            showAlert(t("comment.success_pending"), () => {
               onRefresh();
             });
           }
@@ -605,20 +605,41 @@ function CommentItem({
         className="mt-4 h-8 w-8 rounded-full"
       />
       <div className="flex flex-col flex-1 w-0 ml-2 bg-w rounded-xl p-4">
-        <div className="flex min-w-0 flex-row items-center gap-2">
+        <div className="flex min-w-0 flex-row items-center gap-2 flex-wrap">
           <span className="min-w-0 truncate text-base font-bold t-primary">
             {commenterName}
           </span>
+
+          {/* 网站 */}
           {comment.guestWebsite && (
             <a
-              href={comment.guestWebsite}
+              href={
+                /^https?:\/\//i.test(comment.guestWebsite)
+                  ? comment.guestWebsite
+                  : `https://${comment.guestWebsite}`
+              }
               target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 text-gray-400 transition-colors hover:text-theme"
+              rel="noopener noreferrer nofollow ugc"
+              className="shrink-0 text-sm text-theme hover:underline"
+              title={comment.guestWebsite}
             >
-              <i className="ri-external-link-line"></i>
+              <i className="ri-external-link-line mr-0.5" />
+              网站
             </a>
           )}
+
+          {/* 邮箱 */}
+          {comment.guestEmail && (
+            <a
+              href={`mailto:${comment.guestEmail}`}
+              className="shrink-0 text-sm text-theme hover:underline"
+              title={comment.guestEmail}
+            >
+              <i className="ri-mail-line mr-0.5" />
+              邮箱
+            </a>
+          )}
+
           <div className="flex-1 w-0" />
           <span
             title={new Date(comment.createdAt).toLocaleString()}

@@ -1,13 +1,13 @@
 import i18n from 'i18next';
 import _ from 'lodash';
-import {useCallback, useEffect, useState} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {Helmet} from "react-helmet";
 import {useTranslation} from "react-i18next";
 import Loading from 'react-loading';
 import {ShowAlertType, useAlert} from '../components/dialog';
 import {Checkbox, Input} from "../components/input";
 import { DateTimeInput, FlatMetaRow, FlatPanel } from "@rin/ui";
-import { client } from "../app/runtime";
+import { client, endpoint } from "../app/runtime";
 import {Cache} from '../utils/cache';
 import {useSiteConfig} from "../hooks/useSiteConfig";
 import {siteName} from "../utils/constants";
@@ -124,6 +124,8 @@ export function WritingPage({ id }: { id?: number }) {
   const [title, setTitle] = cache.useCache("title", "");
   const [summary, setSummary] = cache.useCache("summary", "");
   const [tags, setTags] = cache.useCache("tags", "");
+  const [allTags, setAllTags] = useState<{ id: number; name: string }[]>([]);
+  const [tagQuery, setTagQuery] = useState("");
   const [alias, setAlias] = cache.useCache("alias", "");
   const [draft, setDraft] = useState(false);
   const [listed, setListed] = useState(true);
@@ -182,6 +184,7 @@ export function WritingPage({ id }: { id?: number }) {
     }
   }
 
+  // 已有：编辑时回填文章
   useEffect(() => {
     if (id) {
       client.feed
@@ -190,7 +193,7 @@ export function WritingPage({ id }: { id?: number }) {
           if (data) {
             if (title == "" && data.title) setTitle(data.title);
             if (tags == "" && Array.isArray(data.hashtags))
-              setTags(data.hashtags.map(({ name }: {name: string}) => `#${name}`).join(" "));
+              setTags(data.hashtags.map(({ name }: { name: string }) => `#${name}`).join(" "));
             if (alias == "" && (data as any).alias) setAlias((data as any).alias);
             if (content == "") setContent(data.content);
             if (summary == "") setSummary((data as any).summary || "");
@@ -201,6 +204,24 @@ export function WritingPage({ id }: { id?: number }) {
         });
     }
   }, []);
+
+  // 新增：加载全部标签供多选
+  useEffect(() => {
+    fetch(`${endpoint}/api/tag`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setAllTags(
+            data.map((t: any) => ({
+              id: t.id,
+              name: t.name,
+            })),
+          );
+        }
+      })
+      .catch(console.error);
+  }, []);
+  
   const debouncedUpdate = useCallback(
     _.debounce(() => {
       mermaid.initialize({
@@ -226,6 +247,29 @@ export function WritingPage({ id }: { id?: number }) {
   useEffect(() => {
     debouncedUpdate();
   }, [content, debouncedUpdate]);
+  const selectedTagNames = useMemo(() => {
+    return tags
+      .split("#")
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }, [tags]);
+
+  function toggleTag(name: string) {
+    const set = new Set(selectedTagNames);
+    if (set.has(name)) {
+      set.delete(name);
+    } else {
+      set.add(name);
+    }
+    const next = [...set].map((n) => `#${n}`).join(" ");
+    setTags(next);
+  }
+
+  const filteredTags = useMemo(() => {
+    const q = tagQuery.trim().toLowerCase();
+    if (!q) return allTags;
+    return allTags.filter((t) => t.name.toLowerCase().includes(q));
+  }, [allTags, tagQuery]);
   function PublishButton({ className }: { className?: string }) {
     return (
       <button
@@ -277,14 +321,61 @@ export function WritingPage({ id }: { id?: number }) {
               placeholder={t("alias")}
               variant="flat"
             />
-            <Input
-              id={id}
-              value={tags}
-              setValue={setTags}
-              placeholder={t("tags")}
-              variant="flat"
-              className="lg:col-span-2"
-            />
+            <div className="lg:col-span-2 space-y-3">
+              <Input
+                id={id}
+                value={tags}
+                setValue={setTags}
+                placeholder={t("tags") || "#NVIDIA #H200"}
+                variant="flat"
+              />
+
+              {/* 已选 chip */}
+              {selectedTagNames.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedTagNames.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => toggleTag(name)}
+                      className="px-3 py-1 rounded-full text-sm bg-theme text-white hover:opacity-90"
+                    >
+                      #{name} ×
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 搜索 + 候选 */}
+              <input
+                value={tagQuery}
+                onChange={(e) => setTagQuery(e.target.value)}
+                placeholder="搜索已有标签…"
+                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-theme"
+              />
+              <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto">
+                {filteredTags.map((tag) => {
+                  const active = selectedTagNames.includes(tag.name);
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleTag(tag.name)}
+                      className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                        active
+                          ? "bg-theme text-white"
+                          : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-theme/20"
+                      }`}
+                    >
+                      #{tag.name}
+                    </button>
+                  );
+                })}
+                {filteredTags.length === 0 && (
+                  <span className="text-sm text-neutral-400">无匹配标签，可在上方输入框用 #新标签 添加</span>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="mt-5 grid gap-2 sm:gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(18rem,2fr)]">
