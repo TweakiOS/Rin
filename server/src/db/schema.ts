@@ -145,21 +145,23 @@ export const cache = sqliteTable("cache", {
 /** 统一知识实体：概念 / 组件 / 公司 / 产品 */
 export const entities = sqliteTable("entities", {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    slug: text("slug").notNull().unique(),          // ai-server, gpu, nvidia, h100
-    name: text("name").notNull(),                   // AI 服务器 / GPU / NVIDIA
-    name_cn: text("name_cn"),                       // 中文名
-    type: text("type").notNull(),                   // concept | component | company | product
+    slug: text("slug").notNull().unique(),
+    name: text("name").notNull(),
+    name_cn: text("name_cn"),
+    type: text("type").notNull(),
     description: text("description").default("").notNull(),
-    summary: text("summary").default("").notNull(), // 基本面/技术摘要
-    data: text("data", { mode: "json" }).default("{}").notNull(), // 灵活存规格、财务等
-    parent_id: integer("parent_id"),                // 简单树父子（可选）
+    summary: text("summary").default("").notNull(),
+    data: text("data", { mode: "json" }).default("{}").notNull(),
+    parent_id: integer("parent_id"),
     sort_order: integer("sort_order").default(0).notNull(),
+    enabled: integer("enabled").default(1).notNull(), // ← 新增：1 启用 / 0 禁用
     createdAt: created_at,
     updatedAt: updated_at,
 }, (table) => ({
     slugIdx: index("entities_slug_idx").on(table.slug),
     typeIdx: index("entities_type_idx").on(table.type),
     parentIdx: index("entities_parent_idx").on(table.parent_id),
+    enabledIdx: index("entities_enabled_idx").on(table.enabled),
 }));
 
 /** 实体之间的关系（多对多 + 关系类型） */

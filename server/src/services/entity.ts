@@ -1,8 +1,6 @@
 import { Hono } from "hono";
 import type { Env, Variables } from "../core/hono-types";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
-// desc 若不再使用可去掉
-
+import { eq, and, desc, inArray } from "drizzle-orm";
 import {
     entities,
     entityRelations,
@@ -13,23 +11,39 @@ import {
     feeds,
 } from "../db/schema";
 
+const ALLOWED_TYPES = new Set(["concept", "component", "company", "product"]);
+
 export function EntityService() {
     const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-    // 获取实体列表（支持 type 过滤）
+    // GET /entity  列表（游客只看 enabled=1；管理员可看全部，?include_disabled=1）
     app.get("/", async (c) => {
         const db = c.get("db");
-        const type = c.req.query("type"); // concept | component | company | product
+        const admin = c.get("admin");
+        const type = c.req.query("type");
+        const includeDisabled = c.req.query("include_disabled") === "1";
+
+        const conditions = [];
+        if (type) conditions.push(eq(entities.type, type));
+        if (!admin || !includeDisabled) {
+            conditions.push(eq(entities.enabled, 1));
+        }
+
         const list = await db.query.entities.findMany({
-            where: type ? eq(entities.type, type) : undefined,
+            where: conditions.length
+                ? conditions.length === 1
+                    ? conditions[0]
+                    : and(...conditions)
+                : undefined,
             orderBy: [desc(entities.sort_order), desc(entities.id)],
         });
         return c.json(list);
     });
 
-    // 获取单个实体 + 关系 + 挂载标签 + 相关文章
+    // GET /entity/:slug
     app.get("/:slug", async (c) => {
         const db = c.get("db");
+        const admin = c.get("admin");
         const slug = c.req.param("slug");
 
         const entity = await db.query.entities.findFirst({
@@ -37,30 +51,27 @@ export function EntityService() {
         });
         if (!entity) return c.text("Not found", 404);
 
-        // 出边关系
+        // 非管理员不能看已禁用节点
+        if (!admin && entity.enabled === 0) {
+            return c.text("Not found", 404);
+        }
+
         const outgoing = await db.query.entityRelations.findMany({
             where: eq(entityRelations.from_id, entity.id),
             with: { to: true },
         });
-        // 入边关系
         const incoming = await db.query.entityRelations.findMany({
             where: eq(entityRelations.to_id, entity.id),
             with: { from: true },
         });
 
-        // 挂载的标签（entity_hashtags）
         const tagLinks = await db
-            .select({
-                id: hashtags.id,
-                name: hashtags.name,
-            })
+            .select({ id: hashtags.id, name: hashtags.name })
             .from(entityHashtags)
             .innerJoin(hashtags, eq(entityHashtags.hashtagId, hashtags.id))
             .where(eq(entityHashtags.entityId, entity.id));
 
         const tagIds = tagLinks.map((t) => t.id);
-
-        // 文章来源 1：标签下的已发布文章
         const feedMap = new Map<
             number,
             {
@@ -90,13 +101,9 @@ export function EntityService() {
                         eq(feeds.listed, 1),
                     ),
                 );
-
-            for (const row of byTags) {
-                feedMap.set(row.id, row);
-            }
+            for (const row of byTags) feedMap.set(row.id, row);
         }
 
-        // 文章来源 2：原 feed_entities 直连（保留兼容）
         const byEntity = await db
             .select({
                 id: feeds.id,
@@ -115,16 +122,15 @@ export function EntityService() {
                 ),
             )
             .limit(50);
+        for (const row of byEntity) feedMap.set(row.id, row);
 
-        for (const row of byEntity) {
-            feedMap.set(row.id, row);
-        }
-
-        const relatedFeeds = [...feedMap.values()].sort((a, b) => {
-            const ta = a.createdAt ? new Date(a.createdAt as any).getTime() : 0;
-            const tb = b.createdAt ? new Date(b.createdAt as any).getTime() : 0;
-            return tb - ta;
-        }).slice(0, 50);
+        const relatedFeeds = [...feedMap.values()]
+            .sort((a, b) => {
+                const ta = a.createdAt ? new Date(a.createdAt as any).getTime() : 0;
+                const tb = b.createdAt ? new Date(b.createdAt as any).getTime() : 0;
+                return tb - ta;
+            })
+            .slice(0, 50);
 
         return c.json({
             ...entity,
@@ -135,36 +141,105 @@ export function EntityService() {
         });
     });
 
-    // 创建实体（仅管理员）
+    // POST /entity  创建（管理员）
     app.post("/", async (c) => {
         const admin = c.get("admin");
-        if (!admin) {
-            return c.text("Permission denied", 403);
-        }
+        if (!admin) return c.text("Permission denied", 403);
 
         const db = c.get("db");
         const body = await c.req.json();
 
-        // 简单校验
         if (!body.slug || !body.name || !body.type) {
             return c.text("slug, name, type are required", 400);
         }
+        if (!ALLOWED_TYPES.has(body.type)) {
+            return c.text("invalid type", 400);
+        }
 
-        const [result] = await db.insert(entities).values({
-            slug: body.slug,
-            name: body.name,
-            name_cn: body.name_cn ?? null,
-            type: body.type,
-            description: body.description ?? "",
-            summary: body.summary ?? "",
-            data: body.data ?? {},
-            parent_id: body.parent_id ?? null,
-            sort_order: body.sort_order ?? 0,
-        }).returning();
+        const [result] = await db
+            .insert(entities)
+            .values({
+                slug: String(body.slug).trim(),
+                name: String(body.name).trim(),
+                name_cn: body.name_cn ?? null,
+                type: body.type,
+                description: body.description ?? "",
+                summary: body.summary ?? "",
+                data: body.data ?? {},
+                parent_id: body.parent_id ?? null,
+                sort_order: Number(body.sort_order) || 0,
+                enabled: body.enabled === 0 ? 0 : 1,
+            })
+            .returning();
 
         return c.json(result);
     });
-    // 更多 CRUD、关系管理可继续按同样模式加...
+
+    // PUT /entity/:slug  更新（管理员）—— 描述 / 禁用 / 排序等
+    app.put("/:slug", async (c) => {
+        const admin = c.get("admin");
+        if (!admin) return c.text("Permission denied", 403);
+
+        const db = c.get("db");
+        const slug = c.req.param("slug");
+        const body = await c.req.json();
+
+        const existing = await db.query.entities.findFirst({
+            where: eq(entities.slug, slug),
+        });
+        if (!existing) return c.text("Not found", 404);
+
+        const patch: Record<string, unknown> = {
+            updatedAt: new Date(),
+        };
+
+        if (body.name !== undefined) patch.name = String(body.name).trim();
+        if (body.name_cn !== undefined) patch.name_cn = body.name_cn ? String(body.name_cn).trim() : null;
+        if (body.type !== undefined) {
+            if (!ALLOWED_TYPES.has(body.type)) return c.text("invalid type", 400);
+            patch.type = body.type;
+        }
+        if (body.description !== undefined) patch.description = String(body.description ?? "");
+        if (body.summary !== undefined) patch.summary = String(body.summary ?? "");
+        if (body.data !== undefined) patch.data = body.data;
+        if (body.parent_id !== undefined) {
+            patch.parent_id = body.parent_id === null || body.parent_id === "" ? null : Number(body.parent_id);
+        }
+        if (body.sort_order !== undefined) patch.sort_order = Number(body.sort_order) || 0;
+        if (body.enabled !== undefined) patch.enabled = body.enabled === 0 || body.enabled === false ? 0 : 1;
+
+        // 不允许通过此接口改 slug（避免外链失效）；需要改 slug 可另做迁移接口
+
+        const [updated] = await db
+            .update(entities)
+            .set(patch as any)
+            .where(eq(entities.id, existing.id))
+            .returning();
+
+        return c.json(updated);
+    });
+
+    // POST /entity/:slug/toggle  快捷启用/禁用
+    app.post("/:slug/toggle", async (c) => {
+        const admin = c.get("admin");
+        if (!admin) return c.text("Permission denied", 403);
+
+        const db = c.get("db");
+        const slug = c.req.param("slug");
+        const existing = await db.query.entities.findFirst({
+            where: eq(entities.slug, slug),
+        });
+        if (!existing) return c.text("Not found", 404);
+
+        const next = existing.enabled === 1 ? 0 : 1;
+        const [updated] = await db
+            .update(entities)
+            .set({ enabled: next, updatedAt: new Date() })
+            .where(eq(entities.id, existing.id))
+            .returning();
+
+        return c.json(updated);
+    });
 
     return app;
 }
