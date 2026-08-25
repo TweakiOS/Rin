@@ -233,7 +233,7 @@ export function CommentService(): Hono {
 
         await db
             .update(comments)
-            .set({ approved: 1 })
+            .set({ approved: 1, updatedAt: new Date() })
             .where(eq(comments.id, id));
 
         return c.text("OK");
