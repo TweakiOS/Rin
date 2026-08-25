@@ -1,95 +1,154 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { DB } from "../core/hono-types";
 import { profileAsync } from "../core/server-timing";
-import { feedHashtags, hashtags } from "../db/schema";
+import {
+    feedHashtags,
+    hashtags,
+    entities,
+    entityHashtags,
+    feedEntities,
+    entityRelations,
+} from "../db/schema";
 import type { AppContext } from "../core/hono-types";
 
 export function TagService(): Hono {
     const app = new Hono();
 
     // GET /tag
-    app.get('/', async (c: AppContext) => {
-        const db = c.get('db');
-        
-        const tag_list = await profileAsync(c, 'tag_list_db', () => db.query.hashtags.findMany({
-            with: {
-                feeds: { columns: { feedId: true } }
-            }
-        }));
-        
+    app.get("/", async (c: AppContext) => {
+        const db = c.get("db");
+
+        const tag_list = await profileAsync(c, "tag_list_db", () =>
+            db.query.hashtags.findMany({
+                with: {
+                    feeds: { columns: { feedId: true } },
+                },
+            }),
+        );
+
         const result = tag_list.map((tag: any) => ({
             ...tag,
-            feeds: tag.feeds.length
+            feeds: tag.feeds.length,
         }));
-        
+
+        return c.json(result);
+    });
+
+    // POST /tag/sync-knowledge  —— 管理员：全量同步已有文章标签到知识树
+    // 必须放在 /:name 之前
+    app.post("/sync-knowledge", async (c: AppContext) => {
+        const admin = c.get("admin");
+        if (!admin) return c.text("Permission denied", 403);
+
+        const db = c.get("db");
+        const result = await profileAsync(c, "tag_sync_knowledge", () =>
+            syncAllFeedsToKnowledgeTree(db),
+        );
         return c.json(result);
     });
 
     // GET /tag/:name
-    app.get('/:name', async (c: AppContext) => {
-        const db = c.get('db');
-        const admin = c.get('admin');
-        const nameDecoded = decodeURI(c.req.param('name'));
-        
-        const tag = await profileAsync(c, 'tag_detail_db', () => db.query.hashtags.findFirst({
-            where: eq(hashtags.name, nameDecoded),
-            with: {
-                feeds: {
-                    with: {
-                        feed: {
-                            columns: {
-                                id: true, title: true, summary: true, content: true, 
-                                createdAt: true, updatedAt: true, draft: false, listed: false
-                            },
-                            with: {
-                                user: { columns: { id: true, username: true, avatar: true } },
-                                hashtags: {
-                                    columns: {},
-                                    with: { hashtag: { columns: { id: true, name: true } } }
-                                }
-                            },
-                            where: (feeds: any) => admin ? undefined : and(eq(feeds.draft, 0), eq(feeds.listed, 1))
-                        } as any
-                    }
-                }
-            }
-        }));
-        
-        const tagFeeds = tag?.feeds.map((tagFeed: any) => {
-            if (!tagFeed.feed) return null;
-            return {
-                ...tagFeed.feed,
-                hashtags: tagFeed.feed.hashtags.map((hashtag: any) => hashtag.hashtag)
-            };
-        }).filter((feed: any) => feed !== null);
-        
+    app.get("/:name", async (c: AppContext) => {
+        const db = c.get("db");
+        const admin = c.get("admin");
+        const nameDecoded = decodeURI(c.req.param("name"));
+
+        const tag = await profileAsync(c, "tag_detail_db", () =>
+            db.query.hashtags.findFirst({
+                where: eq(hashtags.name, nameDecoded),
+                with: {
+                    feeds: {
+                        with: {
+                            feed: {
+                                columns: {
+                                    id: true,
+                                    title: true,
+                                    summary: true,
+                                    content: true,
+                                    createdAt: true,
+                                    updatedAt: true,
+                                    draft: false,
+                                    listed: false,
+                                },
+                                with: {
+                                    user: {
+                                        columns: {
+                                            id: true,
+                                            username: true,
+                                            avatar: true,
+                                        },
+                                    },
+                                    hashtags: {
+                                        columns: {},
+                                        with: {
+                                            hashtag: {
+                                                columns: {
+                                                    id: true,
+                                                    name: true,
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                                where: (feeds: any) =>
+                                    admin
+                                        ? undefined
+                                        : and(eq(feeds.draft, 0), eq(feeds.listed, 1)),
+                            } as any,
+                        },
+                    },
+                },
+            }),
+        );
+
+        const tagFeeds = tag?.feeds
+            .map((tagFeed: any) => {
+                if (!tagFeed.feed) return null;
+                return {
+                    ...tagFeed.feed,
+                    hashtags: tagFeed.feed.hashtags.map(
+                        (hashtag: any) => hashtag.hashtag,
+                    ),
+                };
+            })
+            .filter((feed: any) => feed !== null);
+
         if (!tag) {
-            return c.text('Not found', 404);
+            return c.text("Not found", 404);
         }
-        
+
         return c.json({ ...tag, feeds: tagFeeds });
     });
 
     return app;
 }
 
+/**
+ * 把标签绑定到文章，并自动同步到知识树（含简单父子关系）
+ */
 export async function bindTagToPost(db: DB, feedId: number, tags: string[]) {
     await db.delete(feedHashtags).where(eq(feedHashtags.feedId, feedId));
 
-    const normalizedTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))];
+    const normalizedTags = [
+        ...new Set(tags.map((tag) => tag.trim()).filter(Boolean)),
+    ];
     if (normalizedTags.length === 0) {
+        await db.delete(feedEntities).where(eq(feedEntities.feedId, feedId));
         return;
     }
 
-    const existingTags = await db.select({ id: hashtags.id, name: hashtags.name })
+    const existingTags = await db
+        .select({ id: hashtags.id, name: hashtags.name })
         .from(hashtags)
         .where(inArray(hashtags.name, normalizedTags));
+
     const tagIds = new Map(existingTags.map((tag) => [tag.name, tag.id]));
     const missingTags = normalizedTags.filter((tag) => !tagIds.has(tag));
 
     if (missingTags.length > 0) {
-        const insertedTags = await db.insert(hashtags)
+        const insertedTags = await db
+            .insert(hashtags)
             .values(missingTags.map((name) => ({ name })))
             .returning({ id: hashtags.id, name: hashtags.name });
         for (const tag of insertedTags) {
@@ -97,8 +156,352 @@ export async function bindTagToPost(db: DB, feedId: number, tags: string[]) {
         }
     }
 
-    await db.insert(feedHashtags).values(normalizedTags.map((name) => ({
-        feedId,
-        hashtagId: tagIds.get(name)!,
-    })));
+    await db.insert(feedHashtags).values(
+        normalizedTags.map((name) => ({
+            feedId,
+            hashtagId: tagIds.get(name)!,
+        })),
+    );
+
+    await syncTagsToKnowledgeTree(db, feedId, normalizedTags, tagIds);
+}
+
+/**
+ * 标签 → 知识树自动同步 + 简单父子关系
+ */
+async function syncTagsToKnowledgeTree(
+    db: DB,
+    feedId: number,
+    tags: string[],
+    tagIds: Map<string, number>,
+) {
+    await db.delete(feedEntities).where(eq(feedEntities.feedId, feedId));
+
+    const entityMap = new Map<
+        string,
+        { id: number; slug: string; type: string; name: string }
+    >();
+
+    for (const tagName of tags) {
+        const slug = toSlug(tagName);
+        if (!slug) continue;
+
+        let entity = await db.query.entities.findFirst({
+            where: eq(entities.slug, slug),
+        });
+
+        if (!entity) {
+            const type = guessEntityType(tagName);
+            const [inserted] = await db
+                .insert(entities)
+                .values({
+                    slug,
+                    name: tagName,
+                    name_cn: containsChinese(tagName) ? tagName : null,
+                    type,
+                    description: "",
+                    summary: "",
+                    data: {},
+                    sort_order: 10,
+                })
+                .returning();
+            entity = inserted;
+        }
+
+        if (!entity) continue;
+
+        entityMap.set(slug, {
+            id: entity.id,
+            slug: entity.slug,
+            type: entity.type,
+            name: entity.name,
+        });
+
+        const hashtagId = tagIds.get(tagName);
+        if (!hashtagId) continue;
+
+        // entity_hashtags
+        const ehExists = await db.query.entityHashtags.findFirst({
+            where: and(
+                eq(entityHashtags.entityId, entity.id),
+                eq(entityHashtags.hashtagId, hashtagId),
+            ),
+        });
+        if (!ehExists) {
+            await db.insert(entityHashtags).values({
+                entityId: entity.id,
+                hashtagId,
+            });
+        }
+
+        // feed_entities
+        const feExists = await db.query.feedEntities.findFirst({
+            where: and(
+                eq(feedEntities.feedId, feedId),
+                eq(feedEntities.entityId, entity.id),
+            ),
+        });
+        if (!feExists) {
+            await db.insert(feedEntities).values({
+                feedId,
+                entityId: entity.id,
+            });
+        }
+    }
+
+    await autoBuildSimpleRelations(db, entityMap);
+}
+
+/**
+ * 根据实体类型 + 规则自动建立 parent_id 和 entity_relations
+ */
+async function autoBuildSimpleRelations(
+    db: DB,
+    entityMap: Map<string, { id: number; slug: string; type: string; name: string }>,
+) {
+    const knownParents = await db.query.entities.findMany({
+        where: inArray(entities.slug, [
+            "ai-server",
+            "gpu",
+            "cpu",
+            "memory",
+            "nvidia",
+            "amd",
+            "micron",
+        ]),
+    });
+    const parentBySlug = new Map(knownParents.map((e) => [e.slug, e]));
+
+    for (const [slug, e] of entityMap) {
+        parentBySlug.set(slug, e as any);
+    }
+
+    for (const [slug, entity] of entityMap) {
+        const lower = (entity.name + " " + slug).toLowerCase();
+
+        // 规则 1：产品 → 公司（product_of）
+        if (entity.type === "product") {
+            let companySlug: string | null = null;
+            if (
+                ["blackwell", "rubin", "vera-rubin", "gb200", "gb300", "h100", "h200", "b200"].some(
+                    (k) => lower.includes(k),
+                )
+            ) {
+                companySlug = "nvidia";
+            } else if (
+                ["mi300", "mi325", "mi455", "helio", "instinct"].some((k) => lower.includes(k))
+            ) {
+                companySlug = "amd";
+            }
+
+            if (companySlug && parentBySlug.has(companySlug)) {
+                const company = parentBySlug.get(companySlug)!;
+                await db
+                    .update(entities)
+                    .set({ parent_id: company.id })
+                    .where(and(eq(entities.id, entity.id), eq(entities.parent_id, null as any)));
+
+                await safeInsertRelation(db, entity.id, company.id, "product_of");
+            }
+        }
+
+        // 规则 2：组件 → ai-server
+        if (
+            entity.type === "component" ||
+            ["hbm", "液冷", "liquid-cooling", "nvlink", "电源"].some((k) => lower.includes(k))
+        ) {
+            const aiServer = parentBySlug.get("ai-server");
+            if (aiServer) {
+                await db
+                    .update(entities)
+                    .set({ parent_id: aiServer.id })
+                    .where(and(eq(entities.id, entity.id), eq(entities.parent_id, null as any)));
+
+                await safeInsertRelation(db, aiServer.id, entity.id, "uses");
+            }
+        }
+
+        // 规则 3：supplier
+        if (entity.type === "product" || entity.type === "component") {
+            if (lower.includes("nvidia") || lower.includes("英伟达")) {
+                const nvidia = parentBySlug.get("nvidia");
+                if (nvidia) {
+                    await safeInsertRelation(db, entity.id, nvidia.id, "supplier");
+                }
+            }
+            if (lower.includes("amd") || lower.includes("超威")) {
+                const amd = parentBySlug.get("amd");
+                if (amd) {
+                    await safeInsertRelation(db, entity.id, amd.id, "supplier");
+                }
+            }
+        }
+
+        // 规则 4：概念挂到 ai-server
+        if (entity.type === "concept" && slug !== "ai-server") {
+            const aiServer = parentBySlug.get("ai-server");
+            if (
+                aiServer &&
+                (lower.includes("服务器") ||
+                    lower.includes("server") ||
+                    lower.includes("超节点") ||
+                    lower.includes("液冷"))
+            ) {
+                await db
+                    .update(entities)
+                    .set({ parent_id: aiServer.id })
+                    .where(and(eq(entities.id, entity.id), eq(entities.parent_id, null as any)));
+
+                await safeInsertRelation(db, aiServer.id, entity.id, "related");
+            }
+        }
+    }
+}
+
+/** 安全插入关系（忽略重复） */
+async function safeInsertRelation(
+    db: DB,
+    fromId: number,
+    toId: number,
+    relationType: string,
+) {
+    if (fromId === toId) return;
+
+    const exists = await db.query.entityRelations.findFirst({
+        where: and(
+            eq(entityRelations.from_id, fromId),
+            eq(entityRelations.to_id, toId),
+            eq(entityRelations.relation_type, relationType),
+        ),
+    });
+    if (!exists) {
+        await db.insert(entityRelations).values({
+            from_id: fromId,
+            to_id: toId,
+            relation_type: relationType,
+        });
+    }
+}
+
+/**
+ * 全量：把所有已绑定标签的文章同步到知识树
+ */
+export async function syncAllFeedsToKnowledgeTree(db: DB) {
+    const rows = await db
+        .select({
+            feedId: feedHashtags.feedId,
+            hashtagId: hashtags.id,
+            name: hashtags.name,
+        })
+        .from(feedHashtags)
+        .innerJoin(hashtags, eq(feedHashtags.hashtagId, hashtags.id));
+
+    const byFeed = new Map<number, { names: string[]; tagIds: Map<string, number> }>();
+    for (const row of rows) {
+        if (!byFeed.has(row.feedId)) {
+            byFeed.set(row.feedId, { names: [], tagIds: new Map() });
+        }
+        const entry = byFeed.get(row.feedId)!;
+        if (!entry.tagIds.has(row.name)) {
+            entry.names.push(row.name);
+            entry.tagIds.set(row.name, row.hashtagId);
+        }
+    }
+
+    let feedsProcessed = 0;
+    let tagsProcessed = 0;
+    let errors = 0;
+
+    for (const [feedId, { names, tagIds }] of byFeed) {
+        try {
+            await syncTagsToKnowledgeTree(db, feedId, names, tagIds);
+            feedsProcessed += 1;
+            tagsProcessed += names.length;
+        } catch (e) {
+            console.error(`sync knowledge failed for feed ${feedId}`, e);
+            errors += 1;
+        }
+    }
+
+    const entityCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(entities)
+        .then((r) => Number(r[0]?.count ?? 0));
+
+    return {
+        feedsProcessed,
+        tagsProcessed,
+        errors,
+        entityCount,
+        generatedAt: new Date().toISOString(),
+    };
+}
+
+/** 生成唯一 slug */
+function toSlug(name: string): string {
+    return name
+        .trim()
+        .toLowerCase()
+        .replace(/[\s\/\\]+/g, "-")
+        .replace(/[^\w\u4e00-\u9fa5-]/g, "")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 80);
+}
+
+function containsChinese(str: string): boolean {
+    return /[\u4e00-\u9fa5]/.test(str);
+}
+
+function guessEntityType(name: string): string {
+    const lower = name.toLowerCase();
+
+    if (
+        [
+            "nvidia",
+            "amd",
+            "intel",
+            "micron",
+            "tsmc",
+            "samsung",
+            "huawei",
+            "阿里",
+            "腾讯",
+            "字节",
+            "英伟达",
+            "超威",
+        ].some((k) => lower.includes(k))
+    ) {
+        return "company";
+    }
+
+    if (
+        [
+            "h100",
+            "h200",
+            "b200",
+            "blackwell",
+            "rubin",
+            "vera",
+            "mi300",
+            "mi325",
+            "mi455",
+            "gb200",
+            "gb300",
+            "helio",
+            "instinct",
+        ].some((k) => lower.includes(k))
+    ) {
+        return "product";
+    }
+
+    if (
+        ["gpu", "cpu", "hbm", "memory", "液冷", "liquid", "nvlink", "电源", "冷却"].some((k) =>
+            lower.includes(k),
+        )
+    ) {
+        return "component";
+    }
+
+    return "concept";
 }

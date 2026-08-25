@@ -61,6 +61,15 @@
       "run": "Start backfill",
       "progress": "Processed {{processed}} / {{total}}, updated {{updated}} posts, failed {{failed}} posts.",
       "result": "Blurhash backfill finished: scanned {{total}} posts, updated {{updated}}, failed {{failed}}."
+    },
+    "knowledge": {
+      "title": "Knowledge Tree Sync",
+      "description": "Fully sync existing post tags into the knowledge tree (entities, links, simple parent relations).",
+      "note": "Only posts with tags are processed. Existing entities are reused. Use this to backfill historical data after enabling auto-sync.",
+      "run": "Sync all tags to knowledge tree",
+      "result": "Done: {{feeds}} posts, {{tags}} tags, {{entities}} entities (errors: {{errors}})",
+      "last_result": "Last run: {{feeds}} posts · {{tags}} tags · {{entities}} entities · errors {{errors}}",
+      "badge": "{{count}} entities"
     }
   },
   "ai_summary": {
