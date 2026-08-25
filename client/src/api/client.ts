@@ -362,6 +362,16 @@ class CommentAPI {
   async delete(id: number): Promise<ApiResponse<void>> {
     return this.http.delete<void>(`/api/comment/${id}`);
   }
+
+  // GET /api/comment/pending  （管理员：待审核列表）
+  async pending(): Promise<ApiResponse<any[]>> {
+    return this.http.get<any[]>("/api/comment/pending");
+  }
+
+  // POST /api/comment/:id/approve  （管理员：审核通过）
+  async approve(id: number): Promise<ApiResponse<void>> {
+    return this.http.post<void>(`/api/comment/${id}/approve`);
+  }
 }
 
 /**

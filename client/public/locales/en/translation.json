@@ -5,6 +5,7 @@
   },
   "admin": {
     "back_to_site": "Back to site",
+    "comments_description": "Review guest comments. Approved comments appear on the post; you can also delete them.",
     "compat_tasks_description": "Run compatibility jobs in bulk to backfill missing AI summaries and image blurhash metadata for older posts.",
     "health_description": "Review required configuration, missing integrations, and risks that can affect runtime behavior.",
     "queue_status_description": "Inspect AI summary queue progress, recent task results, and failures.",
@@ -12,6 +13,27 @@
     "title": "Admin",
     "writing_description": "Write, edit, and publish content from the private management workspace."
   },
+  "comment_moderation": {
+    "title": "Comment Moderation",
+    "loading": "Loading pending comments...",
+    "load_failed": "Failed to load pending comments",
+    "empty_title": "No pending comments",
+    "empty_description": "New guest comments will show up here until approved.",
+    "pending_count": "{{count}} pending",
+    "approve": "Approve",
+    "approving": "Approving",
+    "approve_success": "Comment approved",
+    "delete": "Delete",
+    "deleting": "Deleting",
+    "delete_confirm_title": "Delete comment",
+    "delete_confirm_description": "Delete this pending comment? This cannot be undone.",
+    "delete_success": "Comment deleted",
+    "guest": "Guest",
+    "user": "User",
+    "article": "Post: {{title}}",
+    "feed_id": "Post #{{id}}",
+    "no_title": "Untitled"
+  }
   "compat_tasks": {
     "title": "Compatibility Tasks",
     "loading": "Loading compatibility task status...",

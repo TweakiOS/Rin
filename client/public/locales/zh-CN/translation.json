@@ -5,6 +5,7 @@
   },
   "admin": {
     "back_to_site": "返回站点",
+    "comments_description": "审核游客评论：通过后才会在前台文章页显示，也可直接删除。",
     "compat_tasks_description": "批量触发向前兼容任务，用于补齐历史帖子缺失的 AI 摘要和图片 blurhash 元数据。",
     "health_description": "检查关键配置、缺失的集成项，以及可能影响服务正常运行的风险。",
     "queue_status_description": "查看 AI 摘要队列进度、最近任务结果和失败信息。",
@@ -12,6 +13,27 @@
     "title": "后台管理",
     "writing_description": "在独立的管理工作区中编写、编辑和发布内容。"
   },
+  "comment_moderation": {
+    "title": "评论审核",
+    "loading": "正在加载待审核评论...",
+    "load_failed": "待审核评论加载失败",
+    "empty_title": "暂无待审核评论",
+    "empty_description": "游客新评论会出现在这里，通过后才会公开展示。",
+    "pending_count": "待审核 {{count}} 条",
+    "approve": "通过",
+    "approving": "通过中",
+    "approve_success": "评论已通过",
+    "delete": "删除",
+    "deleting": "删除中",
+    "delete_confirm_title": "删除评论",
+    "delete_confirm_description": "确定删除这条待审核评论吗？此操作不可恢复。",
+    "delete_success": "评论已删除",
+    "guest": "游客",
+    "user": "用户",
+    "article": "文章：{{title}}",
+    "feed_id": "文章 #{{id}}",
+    "no_title": "无标题"
+  }
   "compat_tasks": {
     "title": "兼容任务",
     "loading": "正在加载兼容任务状态...",
