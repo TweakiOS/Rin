@@ -21,8 +21,14 @@ export function CompatTasksPage() {
     aiSummary: { enabled: false, queueConfigured: false, eligible: 0, forceEligible: 0 },
     blurhash: { eligible: 0 },
   });
-  const [runningTask, setRunningTask] = useState<"ai-summary" | "blurhash" | null>(null);
+  const [runningTask, setRunningTask] = useState<"ai-summary" | "blurhash" | "knowledge" | null>(null);
   const [blurhashProgress, setBlurhashProgress] = useState({ total: 0, processed: 0, updated: 0, failed: 0 });
+  const [knowledgeResult, setKnowledgeResult] = useState<{
+    feedsProcessed: number;
+    tagsProcessed: number;
+    errors: number;
+    entityCount: number;
+  } | null>(null);
   const { showAlert, AlertUI } = useAlert();
 
   const loadStatus = () => {
@@ -52,10 +58,12 @@ export function CompatTasksPage() {
         return;
       }
       if (data) {
-        showAlert(t(
-          data.forced ? "compat_tasks.ai_summary.result_force" : "compat_tasks.ai_summary.result",
-          { queued: data.queued, skipped: data.skipped },
-        ));
+        showAlert(
+          t(
+            data.forced ? "compat_tasks.ai_summary.result_force" : "compat_tasks.ai_summary.result",
+            { queued: data.queued, skipped: data.skipped },
+          ),
+        );
         loadStatus();
       }
     } finally {
@@ -108,6 +116,35 @@ export function CompatTasksPage() {
     }
   };
 
+  const runKnowledgeSync = async () => {
+    setRunningTask("knowledge");
+    try {
+      const { data, error } = await client.tag.syncKnowledge();
+      if (error) {
+        showAlert(error.value as string);
+        return;
+      }
+      if (data) {
+        setKnowledgeResult({
+          feedsProcessed: data.feedsProcessed,
+          tagsProcessed: data.tagsProcessed,
+          errors: data.errors,
+          entityCount: data.entityCount,
+        });
+        showAlert(
+          t("compat_tasks.knowledge.result", {
+            feeds: data.feedsProcessed,
+            tags: data.tagsProcessed,
+            entities: data.entityCount,
+            errors: data.errors,
+          }),
+        );
+      }
+    } finally {
+      setRunningTask(null);
+    }
+  };
+
   return (
     <div className="flex w-full flex-col gap-4">
       <Helmet>
@@ -143,8 +180,16 @@ export function CompatTasksPage() {
             />
             <SettingsCardBody>
               <div className="space-y-3 text-sm text-neutral-600 dark:text-neutral-300">
-                <p>{t("compat_tasks.ai_summary.enabled", { value: status.aiSummary.enabled ? t("compat_tasks.yes") : t("compat_tasks.no") })}</p>
-                <p>{t("compat_tasks.ai_summary.queue_configured", { value: status.aiSummary.queueConfigured ? t("compat_tasks.yes") : t("compat_tasks.no") })}</p>
+                <p>
+                  {t("compat_tasks.ai_summary.enabled", {
+                    value: status.aiSummary.enabled ? t("compat_tasks.yes") : t("compat_tasks.no"),
+                  })}
+                </p>
+                <p>
+                  {t("compat_tasks.ai_summary.queue_configured", {
+                    value: status.aiSummary.queueConfigured ? t("compat_tasks.yes") : t("compat_tasks.no"),
+                  })}
+                </p>
                 <p>{t("compat_tasks.ai_summary.force_eligible", { count: status.aiSummary.forceEligible })}</p>
                 <div className="flex flex-wrap gap-3">
                   <Button
@@ -153,7 +198,9 @@ export function CompatTasksPage() {
                     onClick={() => runAISummaryBackfill(false)}
                   />
                   <Button
-                    title={runningTask === "ai-summary" ? t("compat_tasks.running") : t("compat_tasks.ai_summary.run_force")}
+                    title={
+                      runningTask === "ai-summary" ? t("compat_tasks.running") : t("compat_tasks.ai_summary.run_force")
+                    }
                     disabled={runningTask !== null || status.aiSummary.forceEligible === 0}
                     onClick={() => runAISummaryBackfill(true)}
                   />
@@ -189,6 +236,41 @@ export function CompatTasksPage() {
                   title={runningTask === "blurhash" ? t("compat_tasks.running") : t("compat_tasks.blurhash.run")}
                   disabled={runningTask !== null || status.blurhash.eligible === 0}
                   onClick={runBlurhashBackfill}
+                />
+              </div>
+            </SettingsCardBody>
+          </SettingsCard>
+
+          {/* 知识树全量同步 */}
+          <SettingsCard tone="success">
+            <SettingsCardHeader
+              title={t("compat_tasks.knowledge.title")}
+              description={t("compat_tasks.knowledge.description")}
+              badge={
+                knowledgeResult ? (
+                  <SettingsBadge tone="success">
+                    {t("compat_tasks.knowledge.badge", { count: knowledgeResult.entityCount })}
+                  </SettingsBadge>
+                ) : null
+              }
+            />
+            <SettingsCardBody>
+              <div className="space-y-3 text-sm text-neutral-600 dark:text-neutral-300">
+                <p>{t("compat_tasks.knowledge.note")}</p>
+                {knowledgeResult ? (
+                  <p>
+                    {t("compat_tasks.knowledge.last_result", {
+                      feeds: knowledgeResult.feedsProcessed,
+                      tags: knowledgeResult.tagsProcessed,
+                      entities: knowledgeResult.entityCount,
+                      errors: knowledgeResult.errors,
+                    })}
+                  </p>
+                ) : null}
+                <Button
+                  title={runningTask === "knowledge" ? t("compat_tasks.running") : t("compat_tasks.knowledge.run")}
+                  disabled={runningTask !== null}
+                  onClick={runKnowledgeSync}
                 />
               </div>
             </SettingsCardBody>

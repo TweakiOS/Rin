@@ -61,6 +61,15 @@
       "run": "开始补齐",
       "progress": "已处理 {{processed}} / {{total}}，更新 {{updated}} 篇，失败 {{failed}} 篇。",
       "result": "Blurhash 补齐完成：共扫描 {{total}} 篇，成功更新 {{updated}} 篇，失败 {{failed}} 篇。"
+    },
+    "knowledge": {
+      "title": "知识树同步",
+      "description": "将已有文章的标签全量同步到知识树（创建实体、挂载关系、简单父子关系）。",
+      "note": "仅处理已绑定标签的文章；已有实体会复用，不会重复创建。适合在启用自动同步前补齐历史数据。",
+      "run": "全量同步到知识树",
+      "result": "同步完成：处理 {{feeds}} 篇文章、{{tags}} 个标签，当前实体 {{entities}} 个（错误 {{errors}}）",
+      "last_result": "上次结果：{{feeds}} 篇文章 · {{tags}} 标签 · {{entities}} 实体 · 错误 {{errors}}",
+      "badge": "{{count}} 个实体"
     }
   },
   "ai_summary": {

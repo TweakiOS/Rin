@@ -340,6 +340,19 @@ class TagAPI {
   async get(name: string): Promise<ApiResponse<TagDetail>> {
     return this.http.get<TagDetail>(`/api/tag/${encodeURIComponent(name)}`);
   }
+
+  // POST /api/tag/sync-knowledge
+  async syncKnowledge(): Promise<
+    ApiResponse<{
+      feedsProcessed: number;
+      tagsProcessed: number;
+      errors: number;
+      entityCount: number;
+      generatedAt: string;
+    }>
+  > {
+    return this.http.post("/api/tag/sync-knowledge");
+  }
 }
 
 /**
