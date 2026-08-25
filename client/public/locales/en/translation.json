@@ -33,7 +33,7 @@
     "article": "Post: {{title}}",
     "feed_id": "Post #{{id}}",
     "no_title": "Untitled"
-  }
+  },
   "compat_tasks": {
     "title": "Compatibility Tasks",
     "loading": "Loading compatibility task status...",
