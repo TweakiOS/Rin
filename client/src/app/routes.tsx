@@ -32,6 +32,7 @@ import { WritingPage } from "../page/writing";
 import { ProfileContext } from "../state/profile";
 import { tryInt } from "../utils/int";
 import { useTranslation } from "react-i18next";
+import { CommentsModerationPage } from "../page/comments-moderation";
 
 export function AppRoutes() {
   const { t } = useTranslation();
@@ -76,6 +77,10 @@ export function AppRoutes() {
 
       <AdminRoute path="/admin/settings" requirePermission title={t("settings.title")} description={t("admin.settings_description")}>
         <Settings />
+      </AdminRoute>
+
+      <AdminRoute path="/admin/comments" requirePermission title={t("comment_moderation.title")} description={t("admin.comments_description")}      >
+        <CommentsModerationPage />
       </AdminRoute>
 
       <AdminRoute path="/admin/health" requirePermission title={t("health.title")} description={t("admin.health_description")}>

@@ -62,13 +62,14 @@ export function AdminLayout({
               <p className="px-2 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400 dark:text-neutral-500">
                 {t("admin.title")}
               </p>
-              <div className="mt-3 flex flex-col gap-2">
-                <AdminNavItem href="/admin/writing" icon="ri-quill-pen-line" label={t("writing")} />
-                <AdminNavItem href="/admin/settings" icon="ri-settings-3-line" label={t("settings.title")} />
-                <AdminNavItem href="/admin/health" icon="ri-heart-pulse-line" label={t("health.title")} />
-                <AdminNavItem href="/admin/queue-status" icon="ri-todo-line" label={t("queue_status.title")} />
-                <AdminNavItem href="/admin/compat-tasks" icon="ri-history-line" label={t("compat_tasks.title")} />
-              </div>
+            <div className="mt-3 flex flex-col gap-2">
+              <AdminNavItem href="/admin/writing" icon="ri-quill-pen-line" label={t("writing")} />
+              <AdminNavItem href="/admin/settings" icon="ri-settings-3-line" label={t("settings.title")} />
+              <AdminNavItem href="/admin/comments" icon="ri-chat-check-line" label={t("comment_moderation.title")} />
+              <AdminNavItem href="/admin/health" icon="ri-heart-pulse-line" label={t("health.title")} />
+              <AdminNavItem href="/admin/queue-status" icon="ri-todo-line" label={t("queue_status.title")} />
+              <AdminNavItem href="/admin/compat-tasks" icon="ri-history-line" label={t("compat_tasks.title")} />
+            </div>
             </div>
           </div>
         </aside>
