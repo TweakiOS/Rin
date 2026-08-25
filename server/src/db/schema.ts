@@ -186,6 +186,23 @@ export const feedEntities = sqliteTable("feed_entities", {
     pk: unique().on(table.feedId, table.entityId),
 }));
 
+/** 实体（知识树节点）与标签的关联 */
+export const entityHashtags = sqliteTable("entity_hashtags", {
+    entityId: integer("entity_id")
+        .notNull()
+        .references(() => entities.id, { onDelete: "cascade" }),
+    hashtagId: integer("hashtag_id")
+        .notNull()
+        .references(() => hashtags.id, { onDelete: "cascade" }),
+    createdAt: created_at,
+}, (table) => ({
+    entityHashtagIdx: index("entity_hashtags_entity_hashtag_idx")
+        .on(table.entityId, table.hashtagId),
+    hashtagEntityIdx: index("entity_hashtags_hashtag_entity_idx")
+        .on(table.hashtagId, table.entityId),
+    pk: unique().on(table.entityId, table.hashtagId),
+}));
+
 // Relations（放在文件末尾现有 relations 附近）
 export const entitiesRelations = relations(entities, ({ many, one }) => ({
     children: many(entities, { relationName: "parent_child" }),
@@ -197,6 +214,7 @@ export const entitiesRelations = relations(entities, ({ many, one }) => ({
     outgoingRelations: many(entityRelations, { relationName: "from" }),
     incomingRelations: many(entityRelations, { relationName: "to" }),
     feeds: many(feedEntities),
+    hashtags: many(entityHashtags),
 }));
 
 export const entityRelationsRelations = relations(entityRelations, ({ one }) => ({
@@ -252,6 +270,7 @@ export const commentsRelations = relations(comments, ({ one }) => ({
 
 export const hashtagsRelations = relations(hashtags, ({ many }) => ({
     feeds: many(feedHashtags),
+    entities: many(entityHashtags),
 }));
 
 export const feedHashtagsRelations = relations(feedHashtags, ({ one }) => ({
@@ -261,6 +280,17 @@ export const feedHashtagsRelations = relations(feedHashtags, ({ one }) => ({
     }),
     hashtag: one(hashtags, {
         fields: [feedHashtags.hashtagId],
+        references: [hashtags.id],
+    }),
+}));
+
+export const entityHashtagsRelations = relations(entityHashtags, ({ one }) => ({
+    entity: one(entities, {
+        fields: [entityHashtags.entityId],
+        references: [entities.id],
+    }),
+    hashtag: one(hashtags, {
+        fields: [entityHashtags.hashtagId],
         references: [hashtags.id],
     }),
 }));
