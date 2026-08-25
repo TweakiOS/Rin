@@ -668,6 +668,57 @@ class RSSAPI {
   }
 }
 
+class EntityAPI {
+  constructor(private http: HttpClient) {}
+
+  async list(params?: { type?: string; include_disabled?: boolean }) {
+    const sp = new URLSearchParams();
+    if (params?.type) sp.set("type", params.type);
+    if (params?.include_disabled) sp.set("include_disabled", "1");
+    const q = sp.toString();
+    return this.http.get<any[]>(`/api/entity${q ? `?${q}` : ""}`);
+  }
+
+  async get(slug: string) {
+    return this.http.get<any>(`/api/entity/${encodeURIComponent(slug)}`);
+  }
+
+  async create(body: {
+    slug: string;
+    name: string;
+    type: string;
+    name_cn?: string | null;
+    description?: string;
+    summary?: string;
+    parent_id?: number | null;
+    sort_order?: number;
+    enabled?: number;
+  }) {
+    return this.http.post<any>("/api/entity", body);
+  }
+
+  async update(
+    slug: string,
+    body: {
+      name?: string;
+      name_cn?: string | null;
+      type?: string;
+      description?: string;
+      summary?: string;
+      parent_id?: number | null;
+      sort_order?: number;
+      enabled?: number | boolean;
+      data?: unknown;
+    },
+  ) {
+    return this.http.put<any>(`/api/entity/${encodeURIComponent(slug)}`, body);
+  }
+
+  async toggle(slug: string) {
+    return this.http.post<any>(`/api/entity/${encodeURIComponent(slug)}/toggle`);
+  }
+}
+
 // ============================================================================
 // Main API Client Class
 // ============================================================================
@@ -687,6 +738,7 @@ export class ApiClient {
   auth: AuthAPI;
   wp: WordPressAPI;
   rss: RSSAPI;
+  entity: EntityAPI
 
   constructor(baseUrl: string) {
     this.http = new HttpClient(baseUrl);
@@ -703,6 +755,7 @@ export class ApiClient {
     this.auth = new AuthAPI(this.http);
     this.wp = new WordPressAPI(this.http);
     this.rss = new RSSAPI(baseUrl);
+    this.entity = new EntityAPI(this.http);
   }
 }
 
