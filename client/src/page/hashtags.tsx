@@ -88,7 +88,7 @@ export function HashtagsPage() {
                         {sortedHashtags?.map((hashtag, index) => {
                             return (
                                 <div key={index} className="flex min-w-0 w-full flex-row">
-                                    <div className="m-2 flex min-w-0 w-full flex-row items-center space-x-4 rounded-2xl duration-300">
+                                    <div className="my-2 mx-0 flex min-w-0 w-full flex-row items-center space-x-4 rounded-2xl duration-300">
                                         <Link href={`/hashtag/${hashtag.name}`} className="min-w-0 text-base t-primary hover:text-theme text-pretty">
                                             <HashTag name={hashtag.name} />
                                         </Link>
