@@ -679,8 +679,31 @@ class EntityAPI {
     return this.http.get<any[]>(`/api/entity${q ? `?${q}` : ""}`);
   }
 
+  async tree(includeDisabled = false) {
+    return this.http.get<any[]>(
+      `/api/entity/tree${includeDisabled ? "?include_disabled=1" : ""}`,
+    );
+  }
+
+  async search(q: string, limit = 20) {
+    const sp = new URLSearchParams();
+    sp.set("q", q);
+    if (limit) sp.set("limit", String(limit));
+    return this.http.get<any[]>(`/api/entity/search?${sp.toString()}`);
+  }
+
   async get(slug: string) {
     return this.http.get<any>(`/api/entity/${encodeURIComponent(slug)}`);
+  }
+
+  async impact(slug: string) {
+    return this.http.get<{
+      entity: { id: number; slug: string; name: string; name_cn?: string | null };
+      children: Array<{ id: number; slug: string; name: string; name_cn?: string | null; type: string }>;
+      relations: number;
+      hashtags: number;
+      feeds: number;
+    }>(`/api/entity/${encodeURIComponent(slug)}/impact`);
   }
 
   async create(body: {
@@ -691,6 +714,7 @@ class EntityAPI {
     description?: string;
     summary?: string;
     parent_id?: number | null;
+    parent_slug?: string | null;
     sort_order?: number;
     enabled?: number;
   }) {
@@ -706,6 +730,7 @@ class EntityAPI {
       description?: string;
       summary?: string;
       parent_id?: number | null;
+      parent_slug?: string | null;
       sort_order?: number;
       enabled?: number | boolean;
       data?: unknown;
@@ -716,6 +741,50 @@ class EntityAPI {
 
   async toggle(slug: string) {
     return this.http.post<any>(`/api/entity/${encodeURIComponent(slug)}/toggle`);
+  }
+
+  async setParent(slug: string, parent_slug: string | null) {
+    return this.http.put<any>(`/api/entity/${encodeURIComponent(slug)}/parent`, {
+      parent_slug,
+    });
+  }
+
+  async addRelation(slug: string, body: { to_slug: string; relation_type: string }) {
+    return this.http.post<any>(
+      `/api/entity/${encodeURIComponent(slug)}/relations`,
+      body,
+    );
+  }
+
+  async removeRelation(slug: string, id: number) {
+    return this.http.delete<any>(
+      `/api/entity/${encodeURIComponent(slug)}/relations/${id}`,
+    );
+  }
+
+  async addHashtag(slug: string, name: string) {
+    return this.http.post<{ id: number; name: string }>(
+      `/api/entity/${encodeURIComponent(slug)}/hashtags`,
+      { name },
+    );
+  }
+
+  async removeHashtag(slug: string, name: string) {
+    return this.http.delete<any>(
+      `/api/entity/${encodeURIComponent(slug)}/hashtags/${encodeURIComponent(name)}`,
+    );
+  }
+
+  async merge(slug: string, source_slug: string) {
+    return this.http.post<any>(`/api/entity/${encodeURIComponent(slug)}/merge`, {
+      source_slug,
+    });
+  }
+
+  async remove(slug: string, mode: "forbid" | "reparent" | "orphan" = "forbid") {
+    return this.http.delete<any>(
+      `/api/entity/${encodeURIComponent(slug)}?mode=${mode}`,
+    );
   }
 }
 
