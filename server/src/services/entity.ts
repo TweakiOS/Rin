@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env, Variables } from "../core/hono-types";
+import type { Variables } from "../core/hono-types";
 import { eq, and, or, desc, asc, inArray, like } from "drizzle-orm";
 import {
     entities,
@@ -56,7 +56,7 @@ async function wouldCreateCycle(
         if (cursor === entityId) return true;
         if (seen.has(cursor)) return true;
         seen.add(cursor);
-        const row = await db.query.entities.findFirst({
+        const row: { parent_id: number | null } | null = await db.query.entities.findFirst({
             where: eq(entities.id, cursor),
             columns: { parent_id: true },
         });
@@ -69,6 +69,32 @@ async function findBySlug(db: any, slug: string) {
     return db.query.entities.findFirst({
         where: eq(entities.slug, slug),
     });
+}
+
+type EntityData = {
+    aliases?: string[];
+};
+
+function asEntityData(data: unknown): EntityData {
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+        return data as EntityData;
+    }
+    return {};
+}
+
+function uniqueAliases(
+    ...values: Array<string | null | undefined | string[]>
+): string[] {
+    const out = new Set<string>();
+    for (const value of values) {
+        if (!value) continue;
+        const list = Array.isArray(value) ? value : [value];
+        for (const item of list) {
+            const text = String(item).trim();
+            if (text) out.add(text);
+        }
+    }
+    return [...out];
 }
 
 export function EntityService() {
@@ -723,17 +749,26 @@ export function EntityService() {
             }
         }
 
+        // 把被合并掉的身份留下来，避免全量同步按旧 slug / 旧标签名重建
+        const targetData = asEntityData(target.data);
+        const sourceData = asEntityData(source.data);
         await db
             .update(entities)
-            .set({ parent_id: target.id, updatedAt: new Date() })
-            .where(eq(entities.parent_id, source.id));
-
-        if (target.parent_id === source.id) {
-            await db
-                .update(entities)
-                .set({ parent_id: source.parent_id, updatedAt: new Date() })
-                .where(eq(entities.id, target.id));
-        }
+            .set({
+                data: {
+                    ...targetData,
+                    ...sourceData,
+                    aliases: uniqueAliases(
+                        targetData.aliases,
+                        sourceData.aliases,
+                        source.slug,
+                        source.name,
+                        source.name_cn,
+                    ),
+                },
+                updatedAt: new Date(),
+            })
+            .where(eq(entities.id, target.id));
 
         await db.delete(entities).where(eq(entities.id, source.id));
 

@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { DB } from "../core/hono-types";
 import { profileAsync } from "../core/server-timing";
@@ -169,58 +169,180 @@ export async function bindTagToPost(db: DB, feedId: number, tags: string[]) {
 /**
  * 标签 → 知识树自动同步 + 简单父子关系
  */
+type KnowledgeEntity = {
+    id: number;
+    slug: string;
+    type: string;
+    name: string;
+    name_cn: string | null;
+    enabled: number;
+    data: unknown;
+};
+
+function readAliases(data: unknown): string[] {
+    if (!data || typeof data !== "object" || Array.isArray(data)) return [];
+    const aliases = (data as { aliases?: unknown }).aliases;
+    if (!Array.isArray(aliases)) return [];
+    return aliases.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function norm(value: string): string {
+    return value.trim().toLowerCase();
+}
+
+function identityKeys(entity: KnowledgeEntity): string[] {
+    return [
+        ...new Set(
+            [entity.slug, entity.name, entity.name_cn, ...readAliases(entity.data)]
+                .filter((item): item is string => Boolean(item && item.trim()))
+                .map(norm),
+        ),
+    ];
+}
+
+function pickPreferredEntity(list: KnowledgeEntity[]): KnowledgeEntity | null {
+    if (list.length === 0) return null;
+    const enabled = list.filter((item) => item.enabled !== 0);
+    const pool = enabled.length > 0 ? enabled : list;
+    return [...pool].sort((a, b) => a.id - b.id)[0] ?? null;
+}
+
+/**
+ * 解析顺序：
+ * 1. 这个 hashtag 已经挂过的实体（合并后标签会迁到保留节点）
+ * 2. slug / name / name_cn / data.aliases
+ * 3. 都没有再新建
+ */
+async function resolveEntityForTag(
+    db: DB,
+    tagName: string,
+    hashtagId: number,
+    cache: Map<string, KnowledgeEntity>,
+): Promise<KnowledgeEntity | null> {
+    const slug = toSlug(tagName);
+    if (!slug) return null;
+
+    const linkedRows = await db
+        .select({
+            id: entities.id,
+            slug: entities.slug,
+            type: entities.type,
+            name: entities.name,
+            name_cn: entities.name_cn,
+            enabled: entities.enabled,
+            data: entities.data,
+        })
+        .from(entityHashtags)
+        .innerJoin(entities, eq(entityHashtags.entityId, entities.id))
+        .where(eq(entityHashtags.hashtagId, hashtagId));
+
+    const linked = pickPreferredEntity(linkedRows as KnowledgeEntity[]);
+    if (linked) {
+        cache.set(linked.slug, linked);
+        return linked;
+    }
+
+    const keys = [...new Set([slug, tagName, norm(tagName)].filter(Boolean))];
+    for (const key of keys) {
+        const hit = cache.get(key) || cache.get(norm(key));
+        if (hit) return hit;
+    }
+
+    const existing = await db.query.entities.findFirst({
+        where: or(
+            eq(entities.slug, slug),
+            eq(entities.name, tagName),
+            eq(entities.name_cn, tagName),
+        ),
+    });
+    if (existing) {
+        const row = existing as KnowledgeEntity;
+        for (const key of identityKeys(row)) cache.set(key, row);
+        cache.set(row.slug, row);
+        return row;
+    }
+
+    // 别名命中：节点不多，全表扫 aliases 足够
+    const all = await db
+        .select({
+            id: entities.id,
+            slug: entities.slug,
+            type: entities.type,
+            name: entities.name,
+            name_cn: entities.name_cn,
+            enabled: entities.enabled,
+            data: entities.data,
+        })
+        .from(entities);
+
+    const aliasHits: KnowledgeEntity[] = [];
+    const wanted = new Set([norm(slug), norm(tagName)]);
+    for (const row of all as KnowledgeEntity[]) {
+        for (const key of identityKeys(row)) {
+            cache.set(key, row);
+            if (wanted.has(key)) aliasHits.push(row);
+        }
+        cache.set(row.slug, row);
+    }
+
+    const aliased = pickPreferredEntity(aliasHits);
+    if (aliased) return aliased;
+
+    const type = guessEntityType(tagName);
+    const [inserted] = await db
+        .insert(entities)
+        .values({
+            slug,
+            name: tagName,
+            name_cn: containsChinese(tagName) ? tagName : null,
+            type,
+            description: "",
+            summary: "",
+            data: { aliases: [tagName] },
+            sort_order: 10,
+        })
+        .returning();
+
+    if (!inserted) return null;
+
+    const created = inserted as KnowledgeEntity;
+    for (const key of identityKeys(created)) cache.set(key, created);
+    cache.set(created.slug, created);
+    return created;
+}
+
+/**
+ * 标签 → 知识树自动同步 + 简单父子关系
+ * 不再先清空 feed_entities，避免把合并后的关联拆掉再按旧 slug 重建
+ */
 async function syncTagsToKnowledgeTree(
     db: DB,
     feedId: number,
     tags: string[],
     tagIds: Map<string, number>,
 ) {
-    await db.delete(feedEntities).where(eq(feedEntities.feedId, feedId));
-
     const entityMap = new Map<
         string,
         { id: number; slug: string; type: string; name: string }
     >();
+    const cache = new Map<string, KnowledgeEntity>();
+    const desiredIds: number[] = [];
 
     for (const tagName of tags) {
-        const slug = toSlug(tagName);
-        if (!slug) continue;
+        const hashtagId = tagIds.get(tagName);
+        if (!hashtagId) continue;
 
-        let entity = await db.query.entities.findFirst({
-            where: eq(entities.slug, slug),
-        });
-
-        if (!entity) {
-            const type = guessEntityType(tagName);
-            const [inserted] = await db
-                .insert(entities)
-                .values({
-                    slug,
-                    name: tagName,
-                    name_cn: containsChinese(tagName) ? tagName : null,
-                    type,
-                    description: "",
-                    summary: "",
-                    data: {},
-                    sort_order: 10,
-                })
-                .returning();
-            entity = inserted;
-        }
-
+        const entity = await resolveEntityForTag(db, tagName, hashtagId, cache);
         if (!entity) continue;
 
-        entityMap.set(slug, {
+        entityMap.set(entity.slug, {
             id: entity.id,
             slug: entity.slug,
             type: entity.type,
             name: entity.name,
         });
+        desiredIds.push(entity.id);
 
-        const hashtagId = tagIds.get(tagName);
-        if (!hashtagId) continue;
-
-        // entity_hashtags
         const ehExists = await db.query.entityHashtags.findFirst({
             where: and(
                 eq(entityHashtags.entityId, entity.id),
@@ -234,7 +356,6 @@ async function syncTagsToKnowledgeTree(
             });
         }
 
-        // feed_entities
         const feExists = await db.query.feedEntities.findFirst({
             where: and(
                 eq(feedEntities.feedId, feedId),
@@ -247,6 +368,20 @@ async function syncTagsToKnowledgeTree(
                 entityId: entity.id,
             });
         }
+    }
+
+    const uniqueDesired = [...new Set(desiredIds)];
+    if (uniqueDesired.length === 0) {
+        await db.delete(feedEntities).where(eq(feedEntities.feedId, feedId));
+    } else {
+        await db
+            .delete(feedEntities)
+            .where(
+                and(
+                    eq(feedEntities.feedId, feedId),
+                    notInArray(feedEntities.entityId, uniqueDesired),
+                ),
+            );
     }
 
     await autoBuildSimpleRelations(db, entityMap);
