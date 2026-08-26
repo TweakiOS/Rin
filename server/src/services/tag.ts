@@ -455,50 +455,52 @@ function containsChinese(str: string): boolean {
 
 function guessEntityType(name: string): string {
     const lower = name.toLowerCase();
+    const raw = name.trim();
 
+    // —— 公司（英文 / 中文常用名）——
+    const companies = [
+        // 海外
+        "nvidia", "amd", "intel", "micron", "tsmc", "samsung", "broadcom",
+        "qualcomm", "marvell", "arm", "asml", "applied materials", "lam research",
+        "sk hynix", "hynix", "cisco", "dell", "hpe", "supermicro", "lenovo",
+        "ibm", "google", "microsoft", "amazon", "meta", "apple", "oracle",
+        // 中文 / A股相关光模块与算力链（可按你文章继续加）
+        "英伟达", "超威", "华为", "阿里", "腾讯", "字节", "百度", "中兴",
+        "中际旭创", "旭创", "新易盛", "光迅科技", "华工科技", "天孚通信",
+        "源杰科技", "长光华芯", "剑桥科技", "铭普光磁", "太辰光", "德科立",
+        "博创科技", "联特科技", "仕佳光子", "光库科技", "亨通光电", "烽火通信",
+        "寒武纪", "海光", "龙芯", "壁仞", "摩尔线程", "沐曦", "天数智芯",
+        "浪潮", "中科曙光", "紫光股份", "工业富联", "立讯精密", "歌尔",
+    ];
+    if (companies.some((k) => lower.includes(k.toLowerCase()) || raw.includes(k))) {
+        return "company";
+    }
+
+    // 名称像公司：含「科技/股份/通信/光电/半导体」等，且不太像纯技术词
     if (
-        [
-            "nvidia",
-            "amd",
-            "intel",
-            "micron",
-            "tsmc",
-            "samsung",
-            "huawei",
-            "阿里",
-            "腾讯",
-            "字节",
-            "英伟达",
-            "超威",
-        ].some((k) => lower.includes(k))
+        /(科技|股份|集团|有限|通信|光电|半导体|电子|股份有限公司|inc\.?|ltd\.?|corp\.?|co\.,?\s*ltd)/i.test(raw)
+        && !/(服务器|液冷|超节点|集群|带宽|功耗)/.test(raw)
     ) {
         return "company";
     }
 
+    // —— 产品（具体型号）——
     if (
         [
-            "h100",
-            "h200",
-            "b200",
-            "blackwell",
-            "rubin",
-            "vera",
-            "mi300",
-            "mi325",
-            "mi455",
-            "gb200",
-            "gb300",
-            "helio",
-            "instinct",
+            "h100", "h200", "b200", "b100", "blackwell", "rubin", "vera",
+            "mi300", "mi325", "mi350", "mi455", "gb200", "gb300", "helio",
+            "instinct", "gaudi", "trainium", "inferentia",
+            "800g", "1.6t", "osfp", "qsfp", "cpo", "npo",
         ].some((k) => lower.includes(k))
     ) {
         return "product";
     }
 
+    // —— 组件 / 部件 ——
     if (
-        ["gpu", "cpu", "hbm", "memory", "液冷", "liquid", "nvlink", "电源", "冷却"].some((k) =>
-            lower.includes(k),
-        )
+        ["gpu", "cpu", "hbm", "memory", "dram", "sram", "液冷", "liquid",
+         "nvlink", "电源", "冷却", "光模块", "光器件", "激光器", "dsp",
+         "交换机", "网卡", "nic", "dpu", "npu"].some((k) => lower.includes(k))
     ) {
         return "component";
     }
