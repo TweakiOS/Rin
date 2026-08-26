@@ -168,7 +168,7 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
       <div className="w-full flex flex-row justify-center ani-show">
         {error && (
           <>
-            <div className="flex flex-col wauto rounded-2xl bg-w m-2 p-6 items-center justify-center space-y-2">
+            <div className="flex flex-col wauto rounded-2xl bg-w mx-0 my-2 p-4 sm:p-6 items-center justify-center space-y-2">
               <h1 className="text-xl font-bold t-primary">{error}</h1>
               {error === "Not found" && id === "about" && (
                 <Tips value={t("about.notfound")} />
@@ -185,7 +185,7 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
             <div className="xl:w-64" />
             <main className="wauto">
               <article
-                className="rounded-2xl bg-w m-2 px-6 py-4"
+                className="rounded-2xl bg-w mx-0 my-2 px-4 py-4 sm:px-6"
                 aria-label={feed.title ?? "Unnamed"}
               >
                 <div className="flex justify-between">

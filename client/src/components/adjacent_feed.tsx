@@ -20,7 +20,7 @@ export function AdjacentSection({id, setError}: { id: string, setError: (error: 
             });
     }, [id, setError]);
     return (
-        <div className="rounded-2xl bg-w m-2 grid grid-cols-1 sm:grid-cols-2">
+        <div className="rounded-2xl bg-w mx-0 my-2 grid grid-cols-1 sm:grid-cols-2">
             <AdjacentCard data={adjacentFeeds?.previousFeed} type="previous"/>
             <AdjacentCard data={adjacentFeeds?.nextFeed} type="next"/>
         </div>
@@ -43,7 +43,7 @@ export function AdjacentCard({data, type}: { data: AdjacentFeed | null | undefin
     }
     return (
         <Link href={`/feed/${data.id}`} target="_blank"
-              className={`w-full p-6 duration-300 bg-button ${radius}`}>
+              className={`w-full p-4 sm:p-6 duration-300 bg-button ${radius}`}>
             <p className={`t-secondary w-full ${direction}`}>
                 {type === "previous" ? "Previous" : "Next"}
             </p>

@@ -97,7 +97,7 @@ export function TimelinePage() {
 export function FeedItem({ id, title, createdAt }: { id: string, title: string, createdAt: Date }) {
     const formatter = new Intl.DateTimeFormat('en-US', { day: '2-digit', month: '2-digit' });
     return (
-        <div className="flex min-w-0 flex-row pl-8">
+        <div className="flex min-w-0 flex-row pl-4 sm:pl-8">
             <div className="flex shrink-0 flex-row items-center">
                 <div className="w-2 h-2 bg-theme rounded-full"></div>
             </div>
