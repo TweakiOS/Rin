@@ -166,6 +166,14 @@
   "draft_bin": "草稿箱",
   "edit": "编辑",
   "markdown_editor": {
+    "draft": {
+      "clear": "清空草稿",
+      "clear_confirm": "清空当前本地草稿？未发布的修改会丢失。"
+    },
+    "table": {
+      "not_found": "请把光标放在 Markdown 表格内，或选中整张表",
+      "invalid": "无法识别这张 Markdown 表格"
+    },
     "select_all": "全选",
     "placeholder": {
       "bold": "加粗文字",
@@ -181,6 +189,7 @@
       "quote": "引用内容"
     },
     "toolbar": {
+      "format_table": "格式化表格",
       "select_all": "全选",
       "bold": "加粗",
       "code_block": "代码块",
