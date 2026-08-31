@@ -283,6 +283,33 @@ export function WritingPage({ id }: { id?: number }) {
     );
   }
 
+  function clearDraft() {
+    cache.clear();
+    setTitle("");
+    setSummary("");
+    setTags("");
+    setAlias("");
+    setContent("");
+    setTagQuery("");
+    setDraft(false);
+    setListed(true);
+    setCreatedAt(new Date());
+  }
+  
+  function ClearDraftButton({ className }: { className?: string }) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          showAlert(t("markdown_editor.draft.clear_confirm"), clearDraft);
+        }}
+        className={`inline-flex items-center justify-center gap-2 rounded-xl border border-black/10 bg-transparent px-5 py-3 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 dark:border-white/10 dark:text-neutral-300 dark:hover:bg-neutral-800 ${className ?? ""}`}
+      >
+        {t("markdown_editor.draft.clear")}
+      </button>
+    );
+  }
+
   function MetaInput({ className }: { className?: string }) {
     return (
         <FlatPanel className={className}>
@@ -293,7 +320,10 @@ export function WritingPage({ id }: { id?: number }) {
                 {id !== undefined ? t("update.title") : t("publish.title")}
               </p>
             </div>
-            <PublishButton className="w-auto" />
+            <div className="flex shrink-0 items-center gap-2">
+              <ClearDraftButton />
+              <PublishButton className="w-auto" />
+            </div>
           </div>
 
           <div className="mt-5 grid gap-4 lg:grid-cols-2">

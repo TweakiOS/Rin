@@ -166,6 +166,14 @@
   "draft_bin": "Draft Bin",
   "edit": "Edit",
   "markdown_editor": {
+    "draft": {
+      "clear": "Clear draft",
+      "clear_confirm": "Clear the local draft? Unpublished changes will be lost."
+    },
+    "table": {
+      "not_found": "Place the cursor in a Markdown table, or select the whole table",
+      "invalid": "This Markdown table could not be parsed"
+    },
     "select_all": "Select All",
     "placeholder": {
       "bold": "bold text",
@@ -181,6 +189,7 @@
       "quote": "Quote"
     },
     "toolbar": {
+      "format_table": "Format table",
       "select_all": "Select All",
       "bold": "Bold",
       "code_block": "Code block",

@@ -301,6 +301,42 @@ export function MarkdownEditor({
     );
   };
 
+  const formatTable = () => {
+    const editorState = getEditorAndSelection();
+    if (!editorState) return;
+  
+    const { model, selection } = editorState;
+    const fullText = model.getValue();
+    const from = model.getOffsetAt({
+      lineNumber: selection.startLineNumber,
+      column: selection.startColumn,
+    });
+    const to = model.getOffsetAt({
+      lineNumber: selection.endLineNumber,
+      column: selection.endColumn,
+    });
+  
+    const range = findMarkdownTableRange(fullText, from, to);
+    if (!range) {
+      showAlert(t("markdown_editor.table.not_found"));
+      return;
+    }
+  
+    const markdown = fullText.slice(range.start, range.end);
+    const html = markdownTableToHtml(markdown);
+    if (!html) {
+      showAlert(t("markdown_editor.table.invalid"));
+      return;
+    }
+  
+    const start = model.getPositionAt(range.start);
+    const end = model.getPositionAt(range.end);
+    replaceSelection(
+      new Selection(start.lineNumber, start.column, end.lineNumber, end.column),
+      html,
+    );
+  };
+  
   const handleSelectAll = () => {
     const editorInstance = editorRef.current;
     if (!editorInstance) return;
@@ -320,6 +356,7 @@ export function MarkdownEditor({
     { key: "inline-code", icon: "ri-code-s-slash-line", label: t("markdown_editor.toolbar.inline_code"), onClick: () => wrapSelection("`", "`", t("markdown_editor.placeholder.code")) },
     { key: "code-block", icon: "ri-code-box-line", label: t("markdown_editor.toolbar.code_block"), onClick: insertCodeBlock },
     { key: "horizontal-rule", icon: "ri-separator", label: t("markdown_editor.toolbar.horizontal_rule"), onClick: insertHorizontalRule },
+    { key: "format-table", icon: "ri-table-2", label: t("markdown_editor.toolbar.format_table"), onClick: formatTable },
   ];
 
   const handlePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
@@ -523,4 +560,132 @@ export function MarkdownEditor({
       <AlertUI />
     </div>
   );
+}
+
+
+//选中（或光标落在）Markdown 表后，工具栏按钮把整张表换成这套 HTML。列数、行数、表头都从原表读。
+type Align = "left" | "right" | "center";
+
+function splitMarkdownRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+function isSeparatorRow(line: string): boolean {
+  const cells = splitMarkdownRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s/g, "")));
+}
+
+function alignFromSeparator(cell: string): Align {
+  const value = cell.trim();
+  if (value.startsWith(":") && value.endsWith(":")) return "center";
+  if (value.endsWith(":")) return "right";
+  return "left";
+}
+
+function looksNumeric(value: string): boolean {
+  const text = value.replace(/<[^>]+>/g, "").trim();
+  if (!text || text === "—" || text === "-" || text === "–") return true;
+  return /^[+\-−]?\$?\d[\d,]*(?:\.\d+)?%?$/.test(text);
+}
+
+function isEmptyCell(value: string): boolean {
+  const text = value.replace(/<[^>]+>/g, "").trim();
+  return !text || text === "—" || text === "-" || text === "–" || text === "N/A";
+}
+
+function findMarkdownTableRange(text: string, from: number, to: number): { start: number; end: number } | null {
+  const lines = text.split("\n");
+  const offsets: number[] = [];
+  let cursor = 0;
+  for (const line of lines) {
+    offsets.push(cursor);
+    cursor += line.length + 1;
+  }
+
+  const lineAt = (offset: number) => {
+    let index = 0;
+    for (let i = 0; i < offsets.length; i++) {
+      if (offsets[i] <= offset) index = i;
+    }
+    return index;
+  };
+
+  let startLine = lineAt(from);
+  let endLine = lineAt(Math.max(from, to - 1));
+
+  const isTableLine = (line: string) => {
+    const trimmed = line.trim();
+    return trimmed.includes("|") && !trimmed.startsWith("```");
+  };
+
+  while (startLine > 0 && isTableLine(lines[startLine - 1])) startLine--;
+  while (endLine + 1 < lines.length && isTableLine(lines[endLine + 1])) endLine++;
+
+  const block = lines.slice(startLine, endLine + 1).filter((line) => line.trim().length > 0);
+  if (block.length < 2 || !isSeparatorRow(block[1])) return null;
+
+  const start = offsets[startLine];
+  const last = lines[endLine];
+  const end = offsets[endLine] + last.length;
+  return { start, end };
+}
+
+function markdownTableToHtml(markdown: string): string | null {
+  const lines = markdown
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0);
+
+  if (lines.length < 2 || !isSeparatorRow(lines[1])) return null;
+
+  const headers = splitMarkdownRow(lines[0]);
+  const separators = splitMarkdownRow(lines[1]);
+  const rows = lines.slice(2).map(splitMarkdownRow);
+  if (headers.length === 0) return null;
+
+  const columnCount = headers.length;
+  const aligns: Align[] = headers.map((_, index) => {
+    if (separators[index]) return alignFromSeparator(separators[index]);
+    if (index === 0) return "left";
+    const columnValues = rows.map((row) => row[index] || "");
+    return columnValues.every(looksNumeric) ? "right" : "left";
+  });
+
+  const thStyle = (align: Align) =>
+    `padding:6px 10px;text-align:${align};white-space:nowrap;`;
+  const tdStyle = (align: Align, empty: boolean) =>
+    `padding:5px 10px;text-align:${align};white-space:nowrap;${empty ? "opacity:.5;" : ""}`;
+
+  const padRow = (row: string[]) =>
+    Array.from({ length: columnCount }, (_, index) => row[index] ?? "");
+
+  const headerHtml = padRow(headers)
+    .map((cell, index) => `<th style="${thStyle(aligns[index])}">${cell || ""}</th>`)
+    .join("\n        ");
+
+  const bodyHtml = rows
+    .map((row) => {
+      const cells = padRow(row)
+        .map((cell, index) => {
+          const value = cell.trim() ? cell : "—";
+          return `<td style="${tdStyle(aligns[index], isEmptyCell(value))}">${value}</td>`;
+        })
+        .join("\n        ");
+      return `      <tr>\n        ${cells}\n      </tr>`;
+    })
+    .join("\n");
+
+  return `<div style="width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 1em;">
+  <table class="table" style="font-size:12.5px;line-height:1.35;width:max-content;min-width:100%;border-collapse:collapse;">
+    <thead>
+      <tr>
+        ${headerHtml}
+      </tr>
+    </thead>
+    <tbody>
+${bodyHtml}
+    </tbody>
+  </table>
+</div>`;
 }
