@@ -166,6 +166,7 @@
   "draft_bin": "草稿箱",
   "edit": "编辑",
   "markdown_editor": {
+    "select_all": "全选",
     "placeholder": {
       "bold": "加粗文字",
       "code": "代码",
@@ -180,6 +181,7 @@
       "quote": "引用内容"
     },
     "toolbar": {
+      "select_all": "全选",
       "bold": "加粗",
       "code_block": "代码块",
       "heading": "标题",
