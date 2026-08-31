@@ -1,14 +1,13 @@
-import Editor from '@monaco-editor/react';
-import { editor, Range, Selection } from 'monaco-editor';
+import Editor from "@monaco-editor/react";
+import { editor, KeyCode, KeyMod, Range, Selection } from "monaco-editor";
 import React, { useRef, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import Loading from 'react-loading';
+import Loading from "react-loading";
 import { FlatInset, FlatTabButton } from "@rin/ui";
 import { useAlert } from "./dialog";
 import { useColorMode } from "../utils/darkModeUtils";
 import { buildMarkdownImage, uploadImageFile } from "../utils/image-upload";
 import { Markdown } from "./markdown";
-
 
 interface MarkdownEditorProps {
   content: string;
@@ -38,6 +37,19 @@ function positionAfterText(startLineNumber: number, startColumn: number, text: s
   };
 }
 
+function selectAllInEditor(ed: editor.IStandaloneCodeEditor) {
+  const model = ed.getModel();
+  if (!model) return;
+
+  const lastLine = Math.max(1, model.getLineCount());
+  const lastColumn = model.getLineMaxColumn(lastLine);
+  const selection = new Selection(1, 1, lastLine, lastColumn);
+
+  ed.focus();
+  ed.setSelection(selection);
+  ed.revealRangeInCenterIfOutsideViewport(selection);
+}
+
 function MarkdownToolButton({
   label,
   icon,
@@ -65,12 +77,17 @@ function MarkdownToolButton({
   );
 }
 
-export function MarkdownEditor({ content, setContent, placeholder = "> Write your content here...", height = "400px" }: MarkdownEditorProps) {
+export function MarkdownEditor({
+  content,
+  setContent,
+  placeholder = "> Write your content here...",
+  height = "400px",
+}: MarkdownEditorProps) {
   const { t } = useTranslation();
   const colorMode = useColorMode();
   const editorRef = useRef<editor.IStandaloneCodeEditor>();
   const isComposingRef = useRef(false);
-  const [preview, setPreview] = useState<'edit' | 'preview' | 'comparison'>('edit');
+  const [preview, setPreview] = useState<"edit" | "preview" | "comparison">("edit");
   const [uploading, setUploading] = useState(false);
   const { showAlert, AlertUI } = useAlert();
 
@@ -83,14 +100,16 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
       const result = await uploadImageFile(file);
       const editorInstance = editorRef.current;
       if (!editorInstance) return;
-      editorInstance.executeEdits(undefined, [{
-        range,
-        text: buildMarkdownImage(file.name, result.url, {
-          blurhash: result.blurhash,
-          width: result.width,
-          height: result.height,
-        }),
-      }]);
+      editorInstance.executeEdits(undefined, [
+        {
+          range,
+          text: buildMarkdownImage(file.name, result.url, {
+            blurhash: result.blurhash,
+            width: result.width,
+            height: result.height,
+          }),
+        },
+      ]);
     } catch (error) {
       console.error(error);
       showAlert(error instanceof Error ? error.message : t("upload.failed"));
@@ -113,11 +132,13 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
     const editorInstance = editorRef.current;
     if (!editorInstance) return;
 
-    editorInstance.executeEdits("markdown-toolbar", [{
-      range: selection,
-      text,
-      forceMoveMarkers: true,
-    }]);
+    editorInstance.executeEdits("markdown-toolbar", [
+      {
+        range: selection,
+        text,
+        forceMoveMarkers: true,
+      },
+    ]);
     setContent(editorInstance.getValue());
 
     if (nextSelection) {
@@ -161,7 +182,11 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
     const urlStart = positionAfterText(selection.startLineNumber, selection.startColumn, prefix);
     const urlEnd = positionAfterText(urlStart.lineNumber, urlStart.column, url);
 
-    replaceSelection(selection, insertedText, new Selection(urlStart.lineNumber, urlStart.column, urlEnd.lineNumber, urlEnd.column));
+    replaceSelection(
+      selection,
+      insertedText,
+      new Selection(urlStart.lineNumber, urlStart.column, urlEnd.lineNumber, urlEnd.column),
+    );
   };
 
   const insertMarkdownImage = () => {
@@ -177,7 +202,11 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
     const urlStart = positionAfterText(selection.startLineNumber, selection.startColumn, prefix);
     const urlEnd = positionAfterText(urlStart.lineNumber, urlStart.column, url);
 
-    replaceSelection(selection, insertedText, new Selection(urlStart.lineNumber, urlStart.column, urlEnd.lineNumber, urlEnd.column));
+    replaceSelection(
+      selection,
+      insertedText,
+      new Selection(urlStart.lineNumber, urlStart.column, urlEnd.lineNumber, urlEnd.column),
+    );
   };
 
   const insertCodeBlock = () => {
@@ -215,32 +244,30 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
 
     const { editorInstance, model, selection } = editorState;
     const startLineNumber = selection.startLineNumber;
-    const endLineNumber = selection.endLineNumber > selection.startLineNumber && selection.endColumn === 1
-      ? selection.endLineNumber - 1
-      : selection.endLineNumber;
+    const endLineNumber =
+      selection.endLineNumber > selection.startLineNumber && selection.endColumn === 1
+        ? selection.endLineNumber - 1
+        : selection.endLineNumber;
     const currentLine = model.getLineContent(startLineNumber);
     const isEmptySingleLine = selection.isEmpty() && currentLine.trim().length === 0;
     const lines = isEmptySingleLine
       ? [emptyLineFallback]
       : Array.from({ length: endLineNumber - startLineNumber + 1 }, (_, index) => {
-        const lineNumber = startLineNumber + index;
-        return formatter(model.getLineContent(lineNumber), index);
-      });
+          const lineNumber = startLineNumber + index;
+          return formatter(model.getLineContent(lineNumber), index);
+        });
     const targetEndLine = isEmptySingleLine ? startLineNumber : endLineNumber;
-    const range = new Range(
-      startLineNumber,
-      1,
-      targetEndLine,
-      model.getLineMaxColumn(targetEndLine),
-    );
+    const range = new Range(startLineNumber, 1, targetEndLine, model.getLineMaxColumn(targetEndLine));
     const insertedText = lines.join("\n");
     const end = positionAfterText(startLineNumber, 1, insertedText);
 
-    editorInstance.executeEdits("markdown-toolbar", [{
-      range,
-      text: insertedText,
-      forceMoveMarkers: true,
-    }]);
+    editorInstance.executeEdits("markdown-toolbar", [
+      {
+        range,
+        text: insertedText,
+        forceMoveMarkers: true,
+      },
+    ]);
     setContent(editorInstance.getValue());
     editorInstance.setPosition(end);
     editorInstance.focus();
@@ -248,33 +275,40 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
 
   const formatHeading = () => {
     formatSelectedLines(
-      (line) => line.startsWith("#") ? `## ${line.replace(/^#+\s*/, "")}` : `## ${line}`,
+      (line) => (line.startsWith("#") ? `## ${line.replace(/^#+\s*/, "")}` : `## ${line}`),
       `## ${t("markdown_editor.placeholder.heading")}`,
     );
   };
 
   const formatQuote = () => {
     formatSelectedLines(
-      (line) => line.startsWith("> ") ? line : `> ${line}`,
+      (line) => (line.startsWith("> ") ? line : `> ${line}`),
       `> ${t("markdown_editor.placeholder.quote")}`,
     );
   };
 
   const formatUnorderedList = () => {
     formatSelectedLines(
-      (line) => line.match(/^\s*[-*]\s/) ? line : `- ${line}`,
+      (line) => (line.match(/^\s*[-*]\s/) ? line : `- ${line}`),
       `- ${t("markdown_editor.placeholder.list_item")}`,
     );
   };
 
   const formatOrderedList = () => {
     formatSelectedLines(
-      (line, index) => line.match(/^\s*\d+\.\s/) ? line : `${index + 1}. ${line}`,
+      (line, index) => (line.match(/^\s*\d+\.\s/) ? line : `${index + 1}. ${line}`),
       `1. ${t("markdown_editor.placeholder.list_item")}`,
     );
   };
 
+  const handleSelectAll = () => {
+    const editorInstance = editorRef.current;
+    if (!editorInstance) return;
+    selectAllInEditor(editorInstance);
+  };
+
   const markdownActions = [
+    { key: "select-all", icon: "ri-text-wrap", label: t("markdown_editor.toolbar.select_all"), onClick: handleSelectAll },
     { key: "heading", icon: "ri-heading", label: t("markdown_editor.toolbar.heading"), onClick: formatHeading },
     { key: "bold", icon: "ri-bold", label: t("markdown_editor.toolbar.bold"), onClick: () => wrapSelection("**", "**", t("markdown_editor.placeholder.bold")) },
     { key: "italic", icon: "ri-italic", label: t("markdown_editor.toolbar.italic"), onClick: () => wrapSelection("*", "*", t("markdown_editor.placeholder.italic")) },
@@ -291,12 +325,12 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
   const handlePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
     const clipboardData = event.clipboardData;
     if (clipboardData.files.length === 1) {
-      const editor = editorRef.current;
-      if (!editor) return;
-      editor.trigger(undefined, "undo", undefined);
+      const editorInstance = editorRef.current;
+      if (!editorInstance) return;
+      editorInstance.trigger(undefined, "undo", undefined);
       setUploading(true);
       const myfile = clipboardData.files[0] as File;
-      const selection = editor.getSelection();
+      const selection = editorInstance.getSelection();
       if (!selection) {
         setUploading(false);
         return;
@@ -310,7 +344,7 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
   function UploadImageButton() {
     const uploadRef = useRef<HTMLInputElement>(null);
     const label = t("markdown_editor.toolbar.upload_image");
-    
+
     const upChange = (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = event.currentTarget.files;
       if (!files) return;
@@ -321,9 +355,9 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
           showAlert(t("upload.failed$size", { size: 5 }));
           uploadRef.current!.value = "";
         } else {
-          const editor = editorRef.current;
-          if (!editor) return;
-          const selection = editor.getSelection();
+          const editorInstance = editorRef.current;
+          if (!editorInstance) return;
+          const selection = editorInstance.getSelection();
           if (!selection) return;
           setUploading(true);
           void insertImage(file, selection, showAlert).finally(() => {
@@ -332,16 +366,10 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
         }
       }
     };
-    
+
     return (
       <>
-        <input
-          ref={uploadRef}
-          onChange={upChange}
-          className="hidden"
-          type="file"
-          accept="image/gif,image/jpeg,image/jpg,image/png"
-        />
+        <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={upChange} />
         <MarkdownToolButton
           label={label}
           icon="ri-image-add-line"
@@ -352,57 +380,66 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
     );
   }
 
-  /* ---------------- Monaco Mount & IME Optimization ---------------- */
+  const handleEditorMount = (ed: editor.IStandaloneCodeEditor) => {
+    editorRef.current = ed;
 
-  const handleEditorMount = (editor: editor.IStandaloneCodeEditor) => {
-    editorRef.current = editor;
+    ed.addAction({
+      id: "rin.markdown.selectAll",
+      label: t("markdown_editor.select_all"),
+      keybindings: [KeyMod.CtrlCmd | KeyCode.KeyA],
+      precondition: "editorTextFocus",
+      keybindingContext: "!suggestWidgetVisible",
+      contextMenuGroupId: "9_cutcopypaste",
+      contextMenuOrder: 0,
+      run: selectAllInEditor,
+    });
 
-    editor.onDidCompositionStart(() => {
+    ed.onDidCompositionStart(() => {
       isComposingRef.current = true;
     });
 
-    editor.onDidCompositionEnd(() => {
+    ed.onDidCompositionEnd(() => {
       isComposingRef.current = false;
-      setContent(editor.getValue());
+      setContent(ed.getValue());
     });
 
-    editor.onDidChangeModelContent(() => {
+    ed.onDidChangeModelContent(() => {
       if (!isComposingRef.current) {
-        setContent(editor.getValue());
+        setContent(ed.getValue());
       }
     });
 
-    editor.onDidBlurEditorText(() => {
-      setContent(editor.getValue());
+    ed.onDidBlurEditorText(() => {
+      setContent(ed.getValue());
     });
   };
 
-  /* ---------------- synchronization ---------------- */
-
   useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
+    const editorInstance = editorRef.current;
+    if (!editorInstance) return;
 
-    const model = editor.getModel();
+    const model = editorInstance.getModel();
     if (!model) return;
 
     const editorValue = model.getValue();
-
-    // Avoid infinite loops & prevent overwriting content being edited
     if (editorValue !== content) {
-      editor.setValue(content);
+      editorInstance.setValue(content);
     }
   }, [content]);
-
-  /* ---------------- UI ---------------- */
 
   return (
     <div className="flex flex-col gap-0 sm:gap-3">
       <FlatInset className="flex flex-wrap items-center gap-2 border-0 border-b border-black/10 rounded-none bg-transparent p-2 dark:border-white/10 sm:p-3">
         <div className="flex shrink-0 flex-wrap items-center gap-1">
-          <FlatTabButton active={preview === 'edit'} onClick={() => setPreview('edit')}> {t("edit")} </FlatTabButton>
-          <FlatTabButton active={preview === 'preview'} onClick={() => setPreview('preview')}> {t("preview")} </FlatTabButton>
-          <FlatTabButton active={preview === 'comparison'} onClick={() => setPreview('comparison')}> {t("comparison")} </FlatTabButton>
+          <FlatTabButton active={preview === "edit"} onClick={() => setPreview("edit")}>
+            {t("edit")}
+          </FlatTabButton>
+          <FlatTabButton active={preview === "preview"} onClick={() => setPreview("preview")}>
+            {t("preview")}
+          </FlatTabButton>
+          <FlatTabButton active={preview === "comparison"} onClick={() => setPreview("comparison")}>
+            {t("comparison")}
+          </FlatTabButton>
         </div>
         <div className="flex-grow" />
         <div
@@ -421,23 +458,23 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
           <span className="mx-1 hidden h-6 w-px bg-black/10 dark:bg-white/10 sm:block" aria-hidden="true" />
           <UploadImageButton />
         </div>
-        {uploading &&
+        {uploading && (
           <div className="flex flex-row items-center space-x-2 px-2">
             <Loading type="spin" color="#FC466B" height={16} width={16} />
-            <span className="text-sm text-neutral-500">{t('uploading')}</span>
+            <span className="text-sm text-neutral-500">{t("uploading")}</span>
           </div>
-        }
+        )}
       </FlatInset>
-      <div className={`grid grid-cols-1 gap-0 sm:gap-4 ${preview === 'comparison' ? "lg:grid-cols-2" : ""}`}>
-        <div className={"flex min-w-0 flex-col " + (preview === 'preview' ? "hidden" : "")}>
+      <div className={`grid grid-cols-1 gap-0 sm:gap-4 ${preview === "comparison" ? "lg:grid-cols-2" : ""}`}>
+        <div className={"flex min-w-0 flex-col " + (preview === "preview" ? "hidden" : "")}>
           <div
             className={"relative min-h-0 overflow-hidden rounded-none border-0 bg-w"}
             onDrop={(e) => {
               e.preventDefault();
-              const editor = editorRef.current;
-              if (!editor) return;
+              const editorInstance = editorRef.current;
+              if (!editorInstance) return;
               for (let i = 0; i < e.dataTransfer.files.length; i++) {
-                const selection = editor.getSelection();
+                const selection = editorInstance.getSelection();
                 if (!selection) return;
                 const file = e.dataTransfer.files[i];
                 setUploading(true);
@@ -456,30 +493,28 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
               theme={colorMode === "dark" ? "vs-dark" : "light"}
               options={{
                 wordWrap: "on",
-
-                // Chinese IME stability key
                 fontFamily: "Sarasa Mono SC, JetBrains Mono, monospace",
                 fontLigatures: false,
                 letterSpacing: 0,
-
                 fontSize: 14,
                 lineNumbers: "off",
-
                 accessibilitySupport: "off",
                 unicodeHighlight: { ambiguousCharacters: false },
-
                 renderWhitespace: "none",
                 renderControlCharacters: false,
                 smoothScrolling: false,
-
                 dragAndDrop: true,
                 pasteAs: { enabled: false },
+                contextmenu: true,
               }}
             />
           </div>
         </div>
         <div
-          className={"min-h-0 overflow-y-auto rounded-none border-0 bg-w px-4 py-4 border-t sm:border-none " + (preview === 'edit' ? "hidden" : "")}
+          className={
+            "min-h-0 overflow-y-auto rounded-none border-0 bg-w px-4 py-4 border-t sm:border-none " +
+            (preview === "edit" ? "hidden" : "")
+          }
           style={{ height: height }}
         >
           <Markdown content={content ? content : placeholder} />

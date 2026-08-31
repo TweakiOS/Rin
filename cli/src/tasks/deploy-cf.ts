@@ -126,6 +126,12 @@ export function buildWranglerObservabilityConfig(preview = false) {
   `);
 }
 
+async function buildServer() {
+  console.log("🔨 Building server...");
+  await $`${bunExec} run build:server`;
+  console.log("✅ Server built successfully");
+}
+
 async function resolveR2BucketInfo(r2BucketName: string) {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   if (!accountId) return null;
@@ -142,6 +148,10 @@ export async function runCloudflareDeploy(target: "all" | "server" | "client" = 
     return;
   }
 
+  if (target !== "client") {
+    await buildServer();
+  }
+  
   const dbName = renv("DB_NAME", "rin");
   const workerName = renv("WORKER_NAME", "rin-server");
   const taskQueueName = env("TASK_QUEUE_NAME", env("AI_SUMMARY_QUEUE_NAME", `${workerName}-tasks`)) ?? `${workerName}-tasks`;
@@ -180,9 +190,11 @@ export async function runCloudflareDeploy(target: "all" | "server" | "client" = 
     await buildClient();
   }
 
-  const serverDistIndex = Bun.file("./dist/server/_worker.js");
-  const hasServerBuild = await serverDistIndex.exists();
-  const serverMain = hasServerBuild ? "dist/server/_worker.js" : "server/src/_worker.ts";
+//  const serverDistIndex = Bun.file("./dist/server/_worker.js");
+//  const hasServerBuild = await serverDistIndex.exists();
+//  const serverMain = hasServerBuild ? "dist/server/_worker.js" : "server/src/_worker.ts";
+
+  const serverMain = "dist/server/_worker.js";
 
   Bun.write(
     "wrangler.toml",
