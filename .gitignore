@@ -10,6 +10,7 @@ test.ts
 .env.production
 .wrangler
 wrangler.toml
+wrangler.build.toml
 .vite
 coverage/
 # Logs

@@ -631,6 +631,17 @@ function findMarkdownTableRange(text: string, from: number, to: number): { start
   return { start, end };
 }
 
+function colorizeCell(value: string): string {
+  const text = value.replace(/<[^>]+>/g, "").trim();
+  if (/^[+＋]/.test(text) || text.startsWith("-$") || text.startsWith("−$")) {
+    if (/^[+＋]/.test(text)) return `<span class="up">${value}</span>`;
+  }
+  if (/^[-−]/.test(text) || text.startsWith("-$") || text.startsWith("−$")) {
+    return `<span class="down">${value}</span>`;
+  }
+  return value;
+}
+
 function markdownTableToHtml(markdown: string): string | null {
   const lines = markdown
     .split("\n")
@@ -652,16 +663,19 @@ function markdownTableToHtml(markdown: string): string | null {
     return columnValues.every(looksNumeric) ? "right" : "left";
   });
 
-  const thStyle = (align: Align) =>
-    `padding:6px 10px;text-align:${align};white-space:nowrap;`;
-  const tdStyle = (align: Align, empty: boolean) =>
-    `padding:5px 10px;text-align:${align};white-space:nowrap;${empty ? "opacity:.5;" : ""}`;
-
   const padRow = (row: string[]) =>
     Array.from({ length: columnCount }, (_, index) => row[index] ?? "");
 
+  const classFor = (index: number, empty = false) => {
+    const parts = [
+      aligns[index] === "right" ? "col-num" : "",
+      empty ? "is-empty" : "",
+    ].filter(Boolean);
+    return parts.length ? ` class="${parts.join(" ")}"` : "";
+  };
+
   const headerHtml = padRow(headers)
-    .map((cell, index) => `<th style="${thStyle(aligns[index])}">${cell || ""}</th>`)
+    .map((cell, index) => `<th${classFor(index)}>${cell || ""}</th>`)
     .join("\n        ");
 
   const bodyHtml = rows
@@ -669,15 +683,15 @@ function markdownTableToHtml(markdown: string): string | null {
       const cells = padRow(row)
         .map((cell, index) => {
           const value = cell.trim() ? cell : "—";
-          return `<td style="${tdStyle(aligns[index], isEmptyCell(value))}">${value}</td>`;
+          return `<td${classFor(index, isEmptyCell(value))}>${colorizeCell(value)}</td>`;
         })
         .join("\n        ");
       return `      <tr>\n        ${cells}\n      </tr>`;
     })
     .join("\n");
 
-  return `<div style="width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 1em;">
-  <table class="table" style="font-size:12.5px;line-height:1.35;width:max-content;min-width:100%;border-collapse:collapse;">
+  return `<div class="md-table-wrap">
+  <table>
     <thead>
       <tr>
         ${headerHtml}

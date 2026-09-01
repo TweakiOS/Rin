@@ -386,12 +386,14 @@ export function Markdown({ content }: { content: string }) {
         hr({ children, ...props }) {
           return <hr className="my-4" {...props} />;
         },
-        table: ({ node, ...props }) => <table className="table block max-w-full overflow-x-auto" {...props} />,
-        th: ({ node, ...props }) => (
-          <th className="px-4 py-2 border bg-gray-600" {...props} />
+        table: ({ node, className, ...props }) => (
+          <table className={className} {...props} />
         ),
-        td: ({ node, ...props }) => (
-          <td className="px-4 py-2 border" {...props} />
+        th: ({ node, className, ...props }) => (
+          <th className={className} {...props} />
+        ),
+        td: ({ node, className, ...props }) => (
+          <td className={className} {...props} />
         ),
         sup: ({ children, ...props }) => (
           <sup className="text-xs mr-[4px]" {...props}>
