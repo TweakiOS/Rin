@@ -172,7 +172,9 @@
     },
     "table": {
       "not_found": "Place the cursor in a Markdown table, or select the whole table",
-      "invalid": "This Markdown table could not be parsed"
+      "invalid": "This Markdown table could not be parsed",
+      "html_not_found": "Place the cursor in a formatted HTML table, or select the whole table",
+      "html_invalid": "This HTML table could not be restored to Markdown"
     },
     "select_all": "Select All",
     "placeholder": {
@@ -190,6 +192,7 @@
     },
     "toolbar": {
       "format_table": "Format table",
+      "clear_table_format": "Clear table formatting",
       "select_all": "Select All",
       "bold": "Bold",
       "code_block": "Code block",
