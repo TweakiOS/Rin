@@ -304,7 +304,7 @@ export function MarkdownEditor({
   const formatTable = () => {
     const editorState = getEditorAndSelection();
     if (!editorState) return;
-  
+
     const { model, selection } = editorState;
     const fullText = model.getValue();
     const from = model.getOffsetAt({
@@ -315,20 +315,20 @@ export function MarkdownEditor({
       lineNumber: selection.endLineNumber,
       column: selection.endColumn,
     });
-  
+
     const range = findMarkdownTableRange(fullText, from, to);
     if (!range) {
       showAlert(t("markdown_editor.table.not_found"));
       return;
     }
-  
+
     const markdown = fullText.slice(range.start, range.end);
     const html = markdownTableToHtml(markdown);
     if (!html) {
       showAlert(t("markdown_editor.table.invalid"));
       return;
     }
-  
+
     const start = model.getPositionAt(range.start);
     const end = model.getPositionAt(range.end);
     replaceSelection(
@@ -336,7 +336,43 @@ export function MarkdownEditor({
       html,
     );
   };
-  
+
+  const clearTableFormat = () => {
+    const editorState = getEditorAndSelection();
+    if (!editorState) return;
+
+    const { model, selection } = editorState;
+    const fullText = model.getValue();
+    const from = model.getOffsetAt({
+      lineNumber: selection.startLineNumber,
+      column: selection.startColumn,
+    });
+    const to = model.getOffsetAt({
+      lineNumber: selection.endLineNumber,
+      column: selection.endColumn,
+    });
+
+    const range = findHtmlTableRange(fullText, from, to);
+    if (!range) {
+      showAlert(t("markdown_editor.table.html_not_found"));
+      return;
+    }
+
+    const html = fullText.slice(range.start, range.end);
+    const markdown = htmlTableToMarkdown(html);
+    if (!markdown) {
+      showAlert(t("markdown_editor.table.html_invalid"));
+      return;
+    }
+
+    const start = model.getPositionAt(range.start);
+    const end = model.getPositionAt(range.end);
+    replaceSelection(
+      new Selection(start.lineNumber, start.column, end.lineNumber, end.column),
+      markdown,
+    );
+  };
+
   const handleSelectAll = () => {
     const editorInstance = editorRef.current;
     if (!editorInstance) return;
@@ -357,7 +393,7 @@ export function MarkdownEditor({
     { key: "code-block", icon: "ri-code-box-line", label: t("markdown_editor.toolbar.code_block"), onClick: insertCodeBlock },
     { key: "horizontal-rule", icon: "ri-separator", label: t("markdown_editor.toolbar.horizontal_rule"), onClick: insertHorizontalRule },
     { key: "format-table", icon: "ri-table-2", label: t("markdown_editor.toolbar.format_table"), onClick: formatTable },
-  ];
+    { key: "clear-table-format", icon: "ri-format-clear", label: t("markdown_editor.toolbar.clear_table_format"), onClick: clearTableFormat },  ];
 
   const handlePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
     const clipboardData = event.clipboardData;
@@ -702,4 +738,122 @@ ${bodyHtml}
     </tbody>
   </table>
 </div>`;
+}
+
+function findHtmlTableRange(text: string, from: number, to: number): { start: number; end: number } | null {
+  const pattern = /(?:<div\b[^>]*>\s*)?<table\b[\s\S]*?<\/table>(?:\s*<\/div>)?/gi;
+  const cursor = from;
+  const selectionEnd = Math.max(from, to);
+  let containing: { start: number; end: number } | null = null;
+  let nearestBefore: { start: number; end: number } | null = null;
+  let nearestAfter: { start: number; end: number } | null = null;
+
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (cursor >= start && selectionEnd <= end) {
+      return { start, end };
+    }
+    if (cursor >= start && cursor <= end) {
+      containing = { start, end };
+    }
+    if (end <= cursor) {
+      nearestBefore = { start, end };
+    } else if (!nearestAfter && start >= selectionEnd) {
+      nearestAfter = { start, end };
+    }
+  }
+
+  return containing ?? nearestBefore ?? nearestAfter;
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+}
+
+function htmlCellText(raw: string): string {
+  const text = decodeHtmlEntities(raw.replace(/<[^>]+>/g, " "))
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!text || text === "—" || text === "–" || text === "-" || text === "N/A") {
+    return "";
+  }
+
+  return text.replace(/\|/g, "\\|");
+}
+
+function alignFromHtmlCell(raw: string): Align {
+  const styleMatch = raw.match(/text-align\s*:\s*(left|right|center)/i);
+  if (styleMatch) return styleMatch[1].toLowerCase() as Align;
+  const attrMatch = raw.match(/\balign\s*=\s*["']?(left|right|center)["']?/i);
+  if (attrMatch) return attrMatch[1].toLowerCase() as Align;
+  return "left";
+}
+
+function extractHtmlRowCells(rowHtml: string): { text: string; align: Align }[] {
+  const cells: { text: string; align: Align }[] = [];
+  const cellPattern = /<(th|td)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = cellPattern.exec(rowHtml)) !== null) {
+    const attrs = match[2] || "";
+    const inner = match[3] || "";
+    cells.push({
+      text: htmlCellText(inner),
+      align: alignFromHtmlCell(`${attrs} ${inner}`),
+    });
+  }
+  return cells;
+}
+
+function htmlTableToMarkdown(html: string): string | null {
+  const tableMatch = html.match(/<table\b[\s\S]*?<\/table>/i);
+  if (!tableMatch) return null;
+
+  const rows: { text: string; align: Align }[][] = [];
+  const rowPattern = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = rowPattern.exec(tableMatch[0])) !== null) {
+    const cells = extractHtmlRowCells(match[1] || "");
+    if (cells.length > 0) rows.push(cells);
+  }
+
+  if (rows.length === 0) return null;
+
+  const columnCount = Math.max(...rows.map((row) => row.length));
+  if (columnCount === 0) return null;
+
+  const pad = (row: { text: string; align: Align }[]) =>
+    Array.from({ length: columnCount }, (_, index) => row[index] ?? { text: "", align: "left" as Align });
+
+  const header = pad(rows[0]);
+  const body = rows.slice(1).map(pad);
+  const aligns = header.map((cell, index) => {
+    if (cell.align !== "left") return cell.align;
+    const column = body.map((row) => row[index]);
+    const explicit = column.find((item) => item.align !== "left");
+    return explicit?.align ?? "left";
+  });
+
+  const separatorFor = (align: Align) => {
+    if (align === "center") return ":---:";
+    if (align === "right") return "---:";
+    return "---";
+  };
+
+  const formatRow = (cells: string[]) => `| ${cells.join(" | ")} |`;
+
+  return [
+    formatRow(header.map((cell) => cell.text)),
+    formatRow(aligns.map(separatorFor)),
+    ...body.map((row) => formatRow(row.map((cell) => cell.text))),
+  ].join("\n");
 }

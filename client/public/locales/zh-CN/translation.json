@@ -172,7 +172,9 @@
     },
     "table": {
       "not_found": "请把光标放在 Markdown 表格内，或选中整张表",
-      "invalid": "无法识别这张 Markdown 表格"
+      "invalid": "无法识别这张 Markdown 表格",
+      "html_not_found": "请把光标放在已格式化的 HTML 表格内，或选中整张表",
+      "html_invalid": "无法把这张 HTML 表格还原为 Markdown"
     },
     "select_all": "全选",
     "placeholder": {
@@ -190,6 +192,7 @@
     },
     "toolbar": {
       "format_table": "格式化表格",
+      "clear_table_format": "清除表格格式",
       "select_all": "全选",
       "bold": "加粗",
       "code_block": "代码块",
