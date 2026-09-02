@@ -24,6 +24,11 @@ import { parseImageUrlMetadata } from "../utils/image-upload";
 import { useImageLoadState } from "../utils/use-image-load-state";
 
 
+function escapeCurrencyDollars(markdown: string): string {
+  // $100 / \$100 都变成金额，不当公式，表格里也不会露出反斜杠
+  return markdown.replace(/\\?\$(\d)/g, "&#36;$1");
+}
+
 const countNewlinesBeforeNode = (text: string, offset: number) => {
   let newlinesBefore = 0;
   for (let i = offset - 1; i >= 0; i--) {
@@ -137,7 +142,7 @@ export function Markdown({ content }: { content: string }) {
     <ReactMarkdown
       className="toc-content min-w-0 dark:text-neutral-300 [overflow-wrap:anywhere]"
       remarkPlugins={[gfm, remarkMermaid, remarkMath, remarkAlert, remarkBreaks]}
-      children={content}
+      children={escapeCurrencyDollars(content)}
       rehypePlugins={[rehypeKatex, rehypeRaw]}
       components={{
         img({ node, src, ...props }) {
