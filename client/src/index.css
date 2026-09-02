@@ -133,6 +133,7 @@ ul {
   animation: anvil 0.3s cubic-bezier(0.38, 0.1, 0.36, 0.9) forwards;
 }
 
+/* Tables — follow site tokens + system/theme color mode */
 .table {
   @apply w-full border-collapse my-4;
   overflow-x: auto;
@@ -141,11 +142,33 @@ ul {
 
 .table th,
 .table td {
-  @apply border border-slate-500 dark:border-slate-300 px-4 py-2;
+  @apply border px-4 py-2;
+  border-color: rgb(var(--rin-border-rgb) / 0.22);
 }
 
 .table th {
-  @apply bg-slate-200 dark:bg-slate-700;
+  background: rgb(var(--rin-surface-muted-rgb));
+  color: rgb(var(--rin-text-rgb));
+}
+
+.toc-content table,
+.wmde-markdown table,
+.md-table-wrap table {
+  color: rgb(var(--rin-text-rgb));
+}
+
+.toc-content table th,
+.toc-content table td,
+.wmde-markdown table th,
+.wmde-markdown table td {
+  border-color: rgb(var(--rin-border-rgb) / 0.18);
+  background: rgb(var(--rin-surface-rgb));
+  color: rgb(var(--rin-text-rgb));
+}
+
+.toc-content table th,
+.wmde-markdown table th {
+  background: rgb(var(--rin-surface-muted-rgb));
 }
 
 .md-table-wrap {
@@ -153,11 +176,13 @@ ul {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
-  border: 1px solid #d8dee6;
+  border: 1px solid rgb(var(--rin-border-rgb) / 0.16);
   border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+  background: rgb(var(--rin-surface-rgb));
+  box-shadow: 0 1px 2px rgb(var(--rin-border-rgb) / 0.08);
+  color: rgb(var(--rin-text-rgb));
 }
+
 .md-table-wrap table {
   display: table !important;
   border-collapse: collapse;
@@ -165,79 +190,108 @@ ul {
   min-width: 100%;
   margin: 0;
   font-size: 13px;
-  color: #1b1f24;
+  color: rgb(var(--rin-text-rgb));
+  background: transparent;
   overflow: visible;
 }
+
 .md-table-wrap th,
 .md-table-wrap td {
   padding: 10px 12px;
   border: 0;
-  border-bottom: 1px solid #d8dee6;
+  border-bottom: 1px solid rgb(var(--rin-border-rgb) / 0.16);
   white-space: nowrap;
   text-align: left;
   vertical-align: middle;
-  background: #fff;
+  color: rgb(var(--rin-text-rgb));
+  background: rgb(var(--rin-surface-rgb));
 }
+
 .md-table-wrap th {
-  background: #eef2f6;
+  background: rgb(var(--rin-surface-muted-rgb));
   font-weight: 650;
 }
+
 .md-table-wrap tr:last-child td {
   border-bottom: 0;
 }
+
 .md-table-wrap td:first-child,
 .md-table-wrap th:first-child {
   position: sticky;
   left: 0;
   z-index: 1;
   font-weight: 650;
-  background: #fff;
+  background: rgb(var(--rin-surface-rgb));
 }
+
 .md-table-wrap th:first-child {
-  background: #eef2f6;
+  background: rgb(var(--rin-surface-muted-rgb));
   z-index: 2;
 }
+
 .md-table-wrap .col-num {
   text-align: right;
 }
+
 .md-table-wrap .is-empty {
   opacity: 0.5;
 }
+
 .md-table-wrap .up,
 .toc-content .up {
   color: #0f9d58;
 }
+
 .md-table-wrap .down,
 .toc-content .down {
   color: #d93025;
 }
 
-.dark .md-table-wrap {
-  border-color: #2a3140;
-  background: #171b22;
+.dark .md-table-wrap,
+[data-color-mode="dark"] .md-table-wrap {
+  border-color: rgb(var(--rin-border-rgb) / 0.18);
+  background: rgb(var(--rin-surface-rgb));
   box-shadow: none;
 }
-.dark .md-table-wrap table {
-  color: #e8edf5;
+
+.dark .md-table-wrap table,
+[data-color-mode="dark"] .md-table-wrap table {
+  color: rgb(var(--rin-text-rgb));
 }
+
 .dark .md-table-wrap th,
-.dark .md-table-wrap td {
-  border-bottom-color: #2a3140;
-  background: #171b22;
+.dark .md-table-wrap td,
+[data-color-mode="dark"] .md-table-wrap th,
+[data-color-mode="dark"] .md-table-wrap td {
+  border-bottom-color: rgb(var(--rin-border-rgb) / 0.18);
+  background: rgb(var(--rin-surface-rgb));
+  color: rgb(var(--rin-text-rgb));
 }
+
 .dark .md-table-wrap th,
-.dark .md-table-wrap th:first-child {
-  background: #1e2430;
+.dark .md-table-wrap th:first-child,
+[data-color-mode="dark"] .md-table-wrap th,
+[data-color-mode="dark"] .md-table-wrap th:first-child {
+  background: rgb(var(--rin-surface-muted-rgb));
 }
-.dark .md-table-wrap td:first-child {
-  background: #171b22;
+
+.dark .md-table-wrap td:first-child,
+[data-color-mode="dark"] .md-table-wrap td:first-child {
+  background: rgb(var(--rin-surface-rgb));
 }
+
 .dark .md-table-wrap .up,
-.dark .toc-content .up {
+.dark .toc-content .up,
+[data-color-mode="dark"] .md-table-wrap .up,
+[data-color-mode="dark"] .toc-content .up {
   color: #3dd68c;
 }
+
 .dark .md-table-wrap .down,
-.dark .toc-content .down {
+.dark .toc-content .down,
+[data-color-mode="dark"] .md-table-wrap .down,
+[data-color-mode="dark"] .toc-content .down {
   color: #ff6b6b;
 }
 
