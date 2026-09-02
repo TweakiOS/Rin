@@ -600,6 +600,7 @@ export function MarkdownEditor({
 
 
 //选中（或光标落在）Markdown 表后，工具栏按钮把整张表换成这套 HTML。列数、行数、表头都从原表读。
+//选中（或光标落在）Markdown 表后，工具栏按钮把整张表换成这套 HTML。列数、行数、表头都从原表读。
 type Align = "left" | "right" | "center";
 
 function splitMarkdownRow(line: string): string[] {
@@ -619,14 +620,18 @@ function alignFromSeparator(cell: string): Align {
   return "left";
 }
 
+function stripTags(value: string): string {
+  return value.replace(/<[^>]+>/g, "");
+}
+
 function looksNumeric(value: string): boolean {
-  const text = value.replace(/<[^>]+>/g, "").trim();
+  const text = stripTags(value).trim();
   if (!text || text === "—" || text === "-" || text === "–") return true;
   return /^[+\-−]?\$?\d[\d,]*(?:\.\d+)?%?$/.test(text);
 }
 
 function isEmptyCell(value: string): boolean {
-  const text = value.replace(/<[^>]+>/g, "").trim();
+  const text = stripTags(value).trim();
   return !text || text === "—" || text === "-" || text === "–" || text === "N/A";
 }
 
@@ -667,11 +672,61 @@ function findMarkdownTableRange(text: string, from: number, to: number): { start
   return { start, end };
 }
 
-function colorizeCell(value: string): string {
-  const text = value.replace(/<[^>]+>/g, "").trim();
-  if (/^[+＋]/.test(text) || text.startsWith("-$") || text.startsWith("−$")) {
-    if (/^[+＋]/.test(text)) return `<span class="up">${value}</span>`;
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function unescapeHtml(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+}
+
+function inlineMarkdownToHtml(value: string): string {
+  let text = escapeHtml(value);
+
+  text = text.replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, "<strong>$1</strong>");
+  text = text.replace(/__(?=\S)([\s\S]*?\S)__/g, "<strong>$1</strong>");
+  text = text.replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?!\*)/g, "$1<em>$2</em>");
+  text = text.replace(/(^|[^\w_])_(?=\S)([^_\n]*?\S)_(?!_)/g, "$1<em>$2</em>");
+  text = text.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  return text;
+}
+
+function htmlInlineToMarkdown(raw: string): string {
+  let text = raw;
+
+  text = text.replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, "**$2**");
+  text = text.replace(/<(em|i)\b[^>]*>([\s\S]*?)<\/\1>/gi, "*$2*");
+  text = text.replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, "`$1`");
+  text = text.replace(/<span\b[^>]*class=["'][^"']*\b(?:up|down)\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, "$1");
+  text = text.replace(/<br\s*\/?>/gi, " ");
+  text = text.replace(/<[^>]+>/g, "");
+
+  text = unescapeHtml(text)
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!text || text === "—" || text === "–" || text === "-" || text === "N/A") {
+    return "";
   }
+
+  return text.replace(/\|/g, "\\|");
+}
+
+function colorizeCell(value: string): string {
+  const text = stripTags(value).trim();
+  if (/^[+＋]/.test(text)) return `<span class="up">${value}</span>`;
   if (/^[-−]/.test(text) || text.startsWith("-$") || text.startsWith("−$")) {
     return `<span class="down">${value}</span>`;
   }
@@ -711,15 +766,16 @@ function markdownTableToHtml(markdown: string): string | null {
   };
 
   const headerHtml = padRow(headers)
-    .map((cell, index) => `<th${classFor(index)}>${cell || ""}</th>`)
+    .map((cell, index) => `<th${classFor(index)}>${inlineMarkdownToHtml(cell || "")}</th>`)
     .join("\n        ");
 
   const bodyHtml = rows
     .map((row) => {
       const cells = padRow(row)
         .map((cell, index) => {
-          const value = cell.trim() ? cell : "—";
-          return `<td${classFor(index, isEmptyCell(value))}>${colorizeCell(value)}</td>`;
+          const raw = cell.trim() ? cell : "—";
+          const value = inlineMarkdownToHtml(raw);
+          return `<td${classFor(index, isEmptyCell(raw))}>${colorizeCell(value)}</td>`;
         })
         .join("\n        ");
       return `      <tr>\n        ${cells}\n      </tr>`;
@@ -768,30 +824,12 @@ function findHtmlTableRange(text: string, from: number, to: number): { start: nu
   return containing ?? nearestBefore ?? nearestAfter;
 }
 
-function decodeHtmlEntities(value: string): string {
-  return value
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
-}
-
 function htmlCellText(raw: string): string {
-  const text = decodeHtmlEntities(raw.replace(/<[^>]+>/g, " "))
-    .replace(/\u00a0/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!text || text === "—" || text === "–" || text === "-" || text === "N/A") {
-    return "";
-  }
-
-  return text.replace(/\|/g, "\\|");
+  return htmlInlineToMarkdown(raw);
 }
 
 function alignFromHtmlCell(raw: string): Align {
+  if (/\bcol-num\b/.test(raw)) return "right";
   const styleMatch = raw.match(/text-align\s*:\s*(left|right|center)/i);
   if (styleMatch) return styleMatch[1].toLowerCase() as Align;
   const attrMatch = raw.match(/\balign\s*=\s*["']?(left|right|center)["']?/i);
