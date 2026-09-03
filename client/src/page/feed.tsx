@@ -18,9 +18,15 @@ import { siteName } from "../utils/constants";
 import { timeago } from "../utils/timeago";
 import { Button } from "../components/button";
 import { Tips } from "../components/tips";
-import mermaid from "mermaid";
 import { AdjacentSection } from "../components/adjacent_feed.tsx";
 import { stripImageUrlMetadata } from "../utils/image-upload";
+
+// mermaid (diagram renderer) is ~1MB of JS that most articles never need.
+// Load it lazily so it never lands in the entry bundle.
+async function loadMermaid() {
+  const module = await import("mermaid");
+  return module.default;
+}
 
 function extractFirstMarkdownImageUrl(content: string) {
   const match = /!\[.*?\]\((\S+?)(?:\s+"[^"]*")?\)/.exec(content);
@@ -113,23 +119,32 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
     ref.current = id;
   }, [id]);
   useEffect(() => {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: "default",
-    });
-    mermaid.run({
-      suppressErrors: true,
-      nodes: document.querySelectorAll("pre.mermaid_default")
-    }).then(() => {
+    // Only pay the mermaid download cost when the article actually has diagrams.
+    const hasMermaid = document.querySelector("pre.mermaid_default, pre.mermaid_dark");
+    if (!hasMermaid) return;
+    let cancelled = false;
+    loadMermaid().then((mermaid) => {
+      if (cancelled) return;
       mermaid.initialize({
         startOnLoad: false,
-        theme: "dark",
+        theme: "default",
       });
       mermaid.run({
         suppressErrors: true,
-        nodes: document.querySelectorAll("pre.mermaid_dark")
-      });
-    })
+        nodes: document.querySelectorAll("pre.mermaid_default")
+      }).then(() => {
+        if (cancelled) return;
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: "dark",
+        });
+        mermaid.run({
+          suppressErrors: true,
+          nodes: document.querySelectorAll("pre.mermaid_dark")
+        });
+      })
+    });
+    return () => { cancelled = true; };
   }, [feed]);
 
   return (
@@ -183,7 +198,7 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
         {feed && !error && (
           <>
             <div className="xl:w-64" />
-            <main className="wauto">
+            <main className="wauto min-w-0">
               <article
                 className="rounded-2xl bg-w mx-0 my-2 px-4 py-4 sm:px-6"
                 aria-label={feed.title ?? "Unnamed"}

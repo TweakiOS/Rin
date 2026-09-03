@@ -27,8 +27,10 @@ describe('clearFeedCache', () => {
         expect(deletedKeys).toEqual([
             { key: 'feed_42', save: false },
             { key: 'feed_id_42', save: false },
+            { key: 'feed_seo_id_42', save: false },
             { key: 'feed_about', save: false },
-            { key: 'feed_alias_about', save: false }
+            { key: 'feed_alias_about', save: false },
+            { key: 'feed_seo_alias_about', save: false }
         ]);
     });
 
@@ -47,10 +49,13 @@ describe('clearFeedCache', () => {
         expect(deletedKeys).toEqual([
             { key: 'feed_42', save: false },
             { key: 'feed_id_42', save: false },
+            { key: 'feed_seo_id_42', save: false },
             { key: 'feed_about', save: false },
             { key: 'feed_alias_about', save: false },
+            { key: 'feed_seo_alias_about', save: false },
             { key: 'feed_about-us', save: false },
-            { key: 'feed_alias_about-us', save: false }
+            { key: 'feed_alias_about-us', save: false },
+            { key: 'feed_seo_alias_about-us', save: false }
         ]);
     });
 
@@ -75,8 +80,10 @@ describe('clearFeedCache', () => {
             'prefix:search_',
             'delete:feed_42:false',
             'delete:feed_id_42:false',
+            'delete:feed_seo_id_42:false',
             'delete:feed_about:false',
             'delete:feed_alias_about:false',
+            'delete:feed_seo_alias_about:false',
             'prefix:42_previous_feed',
             'prefix:42_next_feed',
             'save'
