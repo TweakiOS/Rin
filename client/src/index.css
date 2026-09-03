@@ -134,41 +134,17 @@ ul {
 }
 
 /* Tables — follow site tokens + system/theme color mode */
-.table {
-  @apply w-full border-collapse my-4;
-  overflow-x: auto;
-  display: block !important;
-}
-
-.table th,
-.table td {
-  @apply border px-4 py-2;
-  border-color: rgb(var(--rin-border-rgb) / 0.22);
-}
-
-.table th {
-  background: rgb(var(--rin-surface-muted-rgb));
-  color: rgb(var(--rin-text-rgb));
-}
-
+.table,
+.md-table-wrap,
 .toc-content table,
-.wmde-markdown table,
-.md-table-wrap table {
-  color: rgb(var(--rin-text-rgb));
+.wmde-markdown table {
+  max-width: 100%;
 }
 
-.toc-content table th,
-.toc-content table td,
-.wmde-markdown table th,
-.wmde-markdown table td {
-  border-color: rgb(var(--rin-border-rgb) / 0.18);
-  background: rgb(var(--rin-surface-rgb));
-  color: rgb(var(--rin-text-rgb));
-}
-
-.toc-content table th,
-.wmde-markdown table th {
-  background: rgb(var(--rin-surface-muted-rgb));
+.table {
+  @apply my-4 border-collapse;
+  display: table !important;
+  width: 100%;
 }
 
 .md-table-wrap {
@@ -183,36 +159,65 @@ ul {
   color: rgb(var(--rin-text-rgb));
 }
 
-.md-table-wrap table {
+.md-table-wrap table,
+.toc-content table,
+.wmde-markdown table {
   display: table !important;
   border-collapse: collapse;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  max-width: 100%;
   margin: 0;
+  table-layout: auto;
   font-size: 13px;
   color: rgb(var(--rin-text-rgb));
-  background: transparent;
-  overflow: visible;
 }
 
+.table th,
+.table td,
 .md-table-wrap th,
-.md-table-wrap td {
+.md-table-wrap td,
+.toc-content table th,
+.toc-content table td,
+.wmde-markdown table th,
+.wmde-markdown table td {
+  max-width: 50vw;
+  width: auto;
   padding: 10px 12px;
-  border: 0;
-  border-bottom: 1px solid rgb(var(--rin-border-rgb) / 0.16);
-  white-space: nowrap;
-  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   vertical-align: middle;
   color: rgb(var(--rin-text-rgb));
   background: rgb(var(--rin-surface-rgb));
 }
 
-.md-table-wrap th {
+.table th,
+.table td {
+  border: 1px solid rgb(var(--rin-border-rgb) / 0.22);
+}
+
+.md-table-wrap th,
+.md-table-wrap td,
+.toc-content table th,
+.toc-content table td,
+.wmde-markdown table th,
+.wmde-markdown table td {
+  border: 0;
+  border-bottom: 1px solid rgb(var(--rin-border-rgb) / 0.16);
+  text-align: left;
+}
+
+.table th,
+.md-table-wrap th,
+.toc-content table th,
+.wmde-markdown table th {
   background: rgb(var(--rin-surface-muted-rgb));
   font-weight: 650;
 }
 
-.md-table-wrap tr:last-child td {
+.md-table-wrap tr:last-child td,
+.toc-content table tr:last-child td,
+.wmde-markdown table tr:last-child td {
   border-bottom: 0;
 }
 
@@ -222,6 +227,7 @@ ul {
   left: 0;
   z-index: 1;
   font-weight: 650;
+  max-width: 50vw;
   background: rgb(var(--rin-surface-rgb));
 }
 
@@ -256,17 +262,14 @@ ul {
 }
 
 .dark .md-table-wrap table,
-[data-color-mode="dark"] .md-table-wrap table {
-  color: rgb(var(--rin-text-rgb));
-}
-
 .dark .md-table-wrap th,
 .dark .md-table-wrap td,
+[data-color-mode="dark"] .md-table-wrap table,
 [data-color-mode="dark"] .md-table-wrap th,
 [data-color-mode="dark"] .md-table-wrap td {
+  color: rgb(var(--rin-text-rgb));
   border-bottom-color: rgb(var(--rin-border-rgb) / 0.18);
   background: rgb(var(--rin-surface-rgb));
-  color: rgb(var(--rin-text-rgb));
 }
 
 .dark .md-table-wrap th,
@@ -294,6 +297,7 @@ ul {
 [data-color-mode="dark"] .toc-content .down {
   color: #ff6b6b;
 }
+
 
 /* TOC Style */
 
