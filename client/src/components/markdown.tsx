@@ -155,14 +155,29 @@ export function Markdown({ content }: { content: string }) {
   useEffect(() => {
     if (!hasMath || rehypeKatex) return;
     let cancelled = false;
-    import("rehype-katex").then((module) => {
-      if (!cancelled) setRehypeKatex(module.default);
-    });
+    import("rehype-katex")
+      .then((module) => {
+        // Guard against a non-function default export (CJS/ESM interop quirks
+        // in some bundling targets can yield a wrapped module). Feeding an
+        // invalid plugin into unified would crash the whole Markdown render.
+        if (!cancelled && typeof module.default === "function") {
+          setRehypeKatex(module.default);
+        }
+      })
+      .catch(() => {
+        // If katex can't load, math just stays as plain text — never crash.
+      });
     return () => { cancelled = true; };
   }, [hasMath, rehypeKatex]);
 
-  const rehypePlugins = useMemo(
-    () => (rehypeKatex ? [rehypeKatex, rehypeRaw] : [rehypeRaw]),
+  const rehypePlugins = useMemo<Pluggable[]>(
+    () =>
+      rehypeKatex
+        ? // `output: "html"` avoids emitting MathML (<math>/<semantics>/<annotation>),
+          // which React 18's reconciler cannot handle and throws
+          // "Cannot use 'in' operator to search for 'children' in undefined".
+          [[rehypeKatex, { output: "html" }] as Pluggable, rehypeRaw]
+        : [rehypeRaw],
     [rehypeKatex]
   );
 
