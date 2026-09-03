@@ -85,8 +85,13 @@ function MarkdownImage({
   const roundedClass = rounded ? "rounded-xl" : "";
   const aspectRatio = width && height ? `${width} / ${height}` : undefined;
 
+  // `loaded` is part of the dependency list on purpose: the canvas only exists
+  // while the image has not loaded yet, so every time it is (re)mounted —
+  // including after `src` changes and `loaded` resets to false — it must be
+  // painted again. Depending on `blurhash` alone left a freshly mounted canvas
+  // unpainted (i.e. a blank placeholder) whenever the URL changed.
   useEffect(() => {
-    if (!blurhash || !canvasRef.current) {
+    if (!blurhash || failed || !canvasRef.current) {
       return;
     }
     try {
@@ -94,21 +99,21 @@ function MarkdownImage({
     } catch (error) {
       console.error("Failed to render blurhash", error);
     }
-  }, [blurhash]);
+  }, [blurhash, failed, loaded]);
 
   return (
     <span
       className={`relative inline-block max-w-full overflow-hidden ${roundedClass}`}
       style={{ zoom: scale, aspectRatio }}
     >
-      {blurhash && !loaded ? (
+      {blurhash && !failed && !loaded ? (
         <canvas
           ref={canvasRef}
           aria-hidden="true"
           className={`absolute inset-0 h-full w-full scale-110 blur-sm ${roundedClass}`}
         />
       ) : null}
-      {failed && !blurhash ? (
+      {failed ? (
         <span
           aria-label={alt || undefined}
           role={alt ? "img" : undefined}
