@@ -157,7 +157,7 @@ describe('CommentService', () => {
         });
 
         it('should return guest comments with user: null in list', async () => {
-            // Create a guest comment first
+            // Create a guest comment first (default pending moderation)
             const createRes = await app.request('/1', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -165,6 +165,18 @@ describe('CommentService', () => {
             }, env);
             expect(createRes.status).toBe(200);
 
+            // Pending guest comments are hidden from the public list; approve it as admin first
+            const cid = (sqlite.prepare(
+                `SELECT id FROM comments WHERE guest_name = 'Guest' AND content = 'Hi from guest'`
+            ).get() as any)?.id;
+            expect(cid).toBeDefined();
+            const approveRes = await app.request(`/${cid}/approve`, {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer mock_token_3' },
+            }, env);
+            expect(approveRes.status).toBe(200);
+
+            // Now it should appear publicly with user: null
             const res = await app.request('/1', { method: 'GET' }, env);
             expect(res.status).toBe(200);
             const data = await res.json() as any[];

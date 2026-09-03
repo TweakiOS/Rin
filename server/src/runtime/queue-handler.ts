@@ -1,7 +1,8 @@
 import { drizzle } from "drizzle-orm/d1";
 import { CacheImpl } from "../utils/cache";
-import { isQueueTask, FEED_AI_SUMMARY_TASK } from "../queue";
+import { isQueueTask, FEED_AI_SUMMARY_TASK, FEED_VISIT_TASK } from "../queue";
 import { processFeedAISummaryTask } from "../services/feed-ai-summary";
+import { processFeedVisitTask } from "../services/feed-visit";
 import { clearFeedCache } from "../services/feed";
 
 export async function handleQueue(
@@ -32,6 +33,10 @@ export async function handleQueue(
           body.payload,
           clearFeedCache,
         );
+        message.ack();
+        break;
+      case FEED_VISIT_TASK:
+        await processFeedVisitTask(db, body.payload);
         message.ack();
         break;
       default:

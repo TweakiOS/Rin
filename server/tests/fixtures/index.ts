@@ -55,6 +55,43 @@ export function createMockDB() {
             FOREIGN KEY (uid) REFERENCES users(id)
         );
 
+        -- Entities table (knowledge tree)
+        CREATE TABLE IF NOT EXISTS entities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            name_cn TEXT,
+            type TEXT NOT NULL,
+            description TEXT DEFAULT '' NOT NULL,
+            summary TEXT DEFAULT '' NOT NULL,
+            data TEXT DEFAULT '{}' NOT NULL,
+            parent_id INTEGER,
+            sort_order INTEGER DEFAULT 0 NOT NULL,
+            enabled INTEGER DEFAULT 1 NOT NULL,
+            created_at INTEGER DEFAULT (unixepoch()),
+            updated_at INTEGER DEFAULT (unixepoch())
+        );
+
+        -- Feed-entities association
+        CREATE TABLE IF NOT EXISTS feed_entities (
+            feed_id INTEGER NOT NULL,
+            entity_id INTEGER NOT NULL,
+            created_at INTEGER DEFAULT (unixepoch()),
+            PRIMARY KEY (feed_id, entity_id),
+            FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE,
+            FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+        );
+
+        -- Entity-hashtag association (knowledge tree node <-> tag)
+        CREATE TABLE IF NOT EXISTS entity_hashtags (
+            entity_id INTEGER NOT NULL,
+            hashtag_id INTEGER NOT NULL,
+            created_at INTEGER DEFAULT (unixepoch()) NOT NULL,
+            PRIMARY KEY (entity_id, hashtag_id),
+            FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE,
+            FOREIGN KEY (hashtag_id) REFERENCES hashtags(id) ON DELETE CASCADE
+        );
+
         -- Moments table
         CREATE TABLE IF NOT EXISTS moments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import gfm from "remark-gfm";
 import remarkMermaid from "../remark/remarkMermaid";
+import remarkEscapeCurrency from "../remark/remarkEscapeCurrency";
 import { remarkAlert } from "remark-github-blockquote-alert";
 import remarkMath from "remark-math";
 import remarkBreaks from "remark-breaks";
@@ -37,11 +38,6 @@ function CodeBlockFallback({ code, style }: { code: string, style: React.CSSProp
 }
 
 
-function escapeCurrencyDollars(markdown: string): string {
-  // $100 / \$100 都变成金额，不当公式，表格里也不会露出反斜杠
-  return markdown.replace(/\\?\$(\d)/g, "&#36;$1");
-}
-
 const countNewlinesBeforeNode = (text: string, offset: number) => {
   let newlinesBefore = 0;
   for (let i = offset - 1; i >= 0; i--) {
@@ -55,12 +51,14 @@ const countNewlinesBeforeNode = (text: string, offset: number) => {
 };
 
 const isMarkdownImageLinkAtEnd = (text: string) => {
-  const trimmed = text.trim();
-
-  const match = trimmed.match(/(.*)(!\\[.*?\\]\\(.*?\\))$/s);
+  // A markdown image link is `![alt](url)` — note the `!` is immediately
+  // followed by `[`, with no backslash. The previous regex used `!\\[` which
+  // only matched an *escaped* bracket (`!\[`) and therefore never matched a
+  // real image link.
+  const match = text.match(/(.*)(!\[[^\]]*\]\([^)]*\))\s*$/s);
 
   if (match) {
-    const [, beforeImage, _] = match;
+    const beforeImage = match[1];
 
     return beforeImage.trim().length === 0 || beforeImage.endsWith("\n");
   }
@@ -152,9 +150,8 @@ export function Markdown({ content }: { content: string }) {
 
   // KaTeX is ~600kB and only a minority of posts use math notation, so the
   // rehype plugin is fetched the first time a post actually needs it.
-  const escaped = useMemo(() => escapeCurrencyDollars(content), [content]);
   const [rehypeKatex, setRehypeKatex] = useState<Pluggable | null>(null);
-  const hasMath = useMemo(() => MATH_PATTERN.test(escaped), [escaped]);
+  const hasMath = useMemo(() => MATH_PATTERN.test(content), [content]);
 
   useEffect(() => {
     if (!hasMath || rehypeKatex) return;
@@ -173,8 +170,8 @@ export function Markdown({ content }: { content: string }) {
   const Content = useMemo(() => (
     <ReactMarkdown
       className="toc-content min-w-0 dark:text-neutral-300 [overflow-wrap:anywhere]"
-      remarkPlugins={[gfm, remarkMermaid, remarkMath, remarkAlert, remarkBreaks]}
-      children={escaped}
+      remarkPlugins={[gfm, remarkMermaid, remarkEscapeCurrency, remarkMath, remarkAlert, remarkBreaks]}
+      children={content}
       rehypePlugins={rehypePlugins}
       components={{
         img({ node, src, ...props }) {

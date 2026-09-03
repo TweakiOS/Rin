@@ -4,12 +4,13 @@ import {
     feedUpdateSchema,
 } from "@rin/api";
 import type { CreateFeedRequest, UpdateFeedRequest } from "@rin/api";
-import { and, asc, count, desc, eq, gt, lt } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, lt, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Variables } from "../core/hono-types";
 import { adminOnly, userOnly, withJsonBody } from "../core/route-boundaries";
 import { profileAsync } from "../core/server-timing";
 import { feeds, visits, visitStats } from "../db/schema";
+import { createTaskQueue, createFeedVisitTask } from "../queue";
 import {
     deleteFeedById,
     findDuplicateFeed,
@@ -87,7 +88,7 @@ export function FeedService(): Hono<{
 
         const page_num = parsePositiveInteger(page, 1) - 1;
         const limit_num = parsePositiveInteger(limit, 20, 50);
-        const cacheKey = `feeds_${type}_${page_num}_${limit_num}`;
+        const cacheKey = `feeds_${admin ? "admin" : "pub"}_${type}_${page_num}_${limit_num}`;
         const cached = await profileAsync(c, 'feed_list_cache_get', () => cache.get(cacheKey));
 
         if (cached) {
@@ -267,6 +268,7 @@ export function FeedService(): Hono<{
         const clientConfig = c.get('clientConfig');
         const admin = c.get('admin');
         const uid = c.get('uid');
+        const env = c.get('env');
         const id = c.req.param('id');
         const id_num = parseFeedId(id);
         const cacheKey = id_num === null ? `feed_alias_${id}` : `feed_id_${id_num}`;
@@ -303,43 +305,42 @@ export function FeedService(): Hono<{
 
         if (enableVisit) {
             const ip = c.req.header('cf-connecting-ip') || c.req.header('x-real-ip') || "UNK";
-            const visitorKey = `${ip}`;
 
-            // Get or create visit stats for this feed
-            let stats = await profileAsync(c, 'feed_detail_stats_lookup', () => db.query.visitStats.findFirst({
-                where: eq(visitStats.feedId, feed.id)
-            }));
-
-            if (!stats) {
-                // Create new stats record
-                await profileAsync(c, 'feed_detail_stats_insert', () => db.insert(visitStats).values({
-                    feedId: feed.id,
-                    pv: 1,
-                    hllData: new HyperLogLog().serialize()
-                }));
-                pv = 1;
-                uv = 1;
-            } else {
-                // Update existing stats
-                const hll = new HyperLogLog(stats.hllData);
-                hll.add(visitorKey);
-                const newHllData = hll.serialize();
-                const newPv = stats.pv + 1;
-
-                await profileAsync(c, 'feed_detail_stats_update', () => db.update(visitStats)
-                    .set({
-                        pv: newPv,
-                        hllData: newHllData,
-                        updatedAt: new Date()
+            // Atomic PV increment on the hot path: insert the row on first view,
+            // otherwise bump pv by 1. This is a single server-side UPDATE, so
+            // concurrent views no longer lose counts (the old read-modify-write
+            // of `stats.pv + 1` raced under load).
+            await profileAsync(c, 'feed_detail_pv_incr', () =>
+                db.insert(visitStats)
+                    .values({ feedId: feed.id, pv: 1, hllData: new HyperLogLog().serialize() })
+                    .onConflictDoUpdate({
+                        target: visitStats.feedId,
+                        set: { pv: sql`${visitStats.pv} + 1`, updatedAt: new Date() },
                     })
-                    .where(eq(visitStats.feedId, feed.id)));
+            );
 
-                pv = newPv;
-                uv = Math.round(hll.count());
+            // The heavy HyperLogLog (UV) maintenance and the per-view `visits`
+            // history row are deferred to the task queue so a detail request
+            // never blocks on HLL (de)serialization or a second write.
+            if (env?.TASK_QUEUE) {
+                try {
+                    await createTaskQueue(env).send(createFeedVisitTask({ feedId: feed.id, ip }));
+                } catch (e) {
+                    console.error("failed to enqueue visit recording task", e);
+                }
             }
 
-            // Keep recording to visits table for backup/history
-            await profileAsync(c, 'feed_detail_visit_insert', () => db.insert(visits).values({ feedId: feed.id, ip: ip }));
+            // Best-effort pv/uv for the response. hllData is read for display
+            // only; the queue updates it shortly after, so uv may lag by one
+            // view — acceptable for a counter.
+            const stats = await profileAsync(c, 'feed_detail_stats_read', () =>
+                db.query.visitStats.findFirst({
+                    where: eq(visitStats.feedId, feed.id),
+                    columns: { pv: true, hllData: true },
+                })
+            );
+            pv = stats?.pv ?? 1;
+            uv = stats ? Math.round(new HyperLogLog(stats.hllData).count()) : 1;
         }
 
         return c.json({ ...other, hashtags: hashtags_flatten, pv, uv });
@@ -378,7 +379,7 @@ export function FeedService(): Hono<{
                 const summary = feed.summary.length > 0
                     ? feed.summary
                     : plainText.length > 50 ? plainText.slice(0, 50) : plainText;
-                const cacheKey = `${feed.id}_${feedDirection}_${id_num}`;
+                const cacheKey = `adjacent_${feedDirection === "previous_feed" ? "prev" : "next"}_${id_num}`;
                 const cacheData = {
                     id: feed.id,
                     title: feed.title,
@@ -394,9 +395,9 @@ export function FeedService(): Hono<{
         }
 
         const getPreviousFeed = async () => {
-            const previousFeedCached = await profileAsync(c, 'feed_adjacent_prev_cache', () => cache.getBySuffix(`previous_feed_${id_num}`));
-            if (previousFeedCached && previousFeedCached.length > 0) {
-                return previousFeedCached[0];
+            const previousFeedCached = await profileAsync(c, 'feed_adjacent_prev_cache', () => cache.get(`adjacent_prev_${id_num}`));
+            if (previousFeedCached) {
+                return previousFeedCached;
             } else {
                 const tempPreviousFeed = await profileAsync(c, 'feed_adjacent_prev_db', () => db.query.feeds.findFirst({
                     where: and(and(eq(feeds.draft, 0), eq(feeds.listed, 1)), lt(feeds.createdAt, created_at)),
@@ -414,9 +415,9 @@ export function FeedService(): Hono<{
         };
 
         const getNextFeed = async () => {
-            const nextFeedCached = await profileAsync(c, 'feed_adjacent_next_cache', () => cache.getBySuffix(`next_feed_${id_num}`));
-            if (nextFeedCached && nextFeedCached.length > 0) {
-                return nextFeedCached[0];
+            const nextFeedCached = await profileAsync(c, 'feed_adjacent_next_cache', () => cache.get(`adjacent_next_${id_num}`));
+            if (nextFeedCached) {
+                return nextFeedCached;
             } else {
                 const tempNextFeed = await profileAsync(c, 'feed_adjacent_next_db', () => db.query.feeds.findFirst({
                     where: and(and(eq(feeds.draft, 0), eq(feeds.listed, 1)), gt(feeds.createdAt, created_at)),

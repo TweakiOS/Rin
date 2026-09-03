@@ -20,7 +20,12 @@ function normalizeWebsite(raw?: string): string {
     try {
         const parsed = new URL(u);
         if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
-        return parsed.toString().slice(0, MAX_WEBSITE);
+        let out = parsed.toString();
+        // 根路径（如 example.com/）去掉尾斜杠，存规范形式 example.com
+        if (parsed.pathname === "/" && !parsed.search && !parsed.hash) {
+            out = out.replace(/\/$/, "");
+        }
+        return out.slice(0, MAX_WEBSITE);
     } catch {
         return "";
     }
