@@ -161,7 +161,11 @@ export function Markdown({ content }: { content: string }) {
         // in some bundling targets can yield a wrapped module). Feeding an
         // invalid plugin into unified would crash the whole Markdown render.
         if (!cancelled && typeof module.default === "function") {
-          setRehypeKatex(module.default);
+          // MUST be wrapped in an updater: `setState(fn)` treats a bare
+          // function as a state updater and would *call* the plugin with the
+          // previous state, storing its transformer instead of the plugin
+          // itself (the plugin then silently does nothing).
+          setRehypeKatex(() => module.default);
         }
       })
       .catch(() => {
@@ -472,7 +476,7 @@ export function Markdown({ content }: { content: string }) {
           return <div {...props}>{children}</div>;
         },
       }}
-    />), [content])
+    />), [escaped, rehypePlugins])
 
 
 
