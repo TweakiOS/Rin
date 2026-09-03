@@ -19,8 +19,11 @@ function FeedCardImage({ src, variant }: { src: string; variant: FeedCardVariant
             ? "relative flex max-h-80 w-full flex-row items-center overflow-hidden rounded-[20px]"
             : "relative mb-2 flex max-h-80 w-full flex-row items-center overflow-hidden rounded-xl";
 
+    // `loaded`/`failed` must stay in the dependency list: the canvas is only
+    // mounted while the image has not loaded yet, so it has to be repainted
+    // every time it comes back (e.g. after `src` changes reset `loaded`).
     useEffect(() => {
-        if (!blurhash || !canvasRef.current) {
+        if (!blurhash || failed || !canvasRef.current) {
             return;
         }
         try {
@@ -28,21 +31,21 @@ function FeedCardImage({ src, variant }: { src: string; variant: FeedCardVariant
         } catch (error) {
             console.error("Failed to render blurhash", error);
         }
-    }, [blurhash]);
+    }, [blurhash, failed, loaded]);
 
     return (
         <div
             className={imageFrameClass}
             style={{ aspectRatio: aspectRatio || '16 / 9' }}
         >
-            {blurhash && !loaded ? (
+            {blurhash && !failed && !loaded ? (
                 <canvas
                     ref={canvasRef}
                     aria-hidden="true"
                     className="absolute inset-0 h-full w-full scale-110 object-cover blur-sm"
                 />
             ) : null}
-            {failed && !blurhash ? (
+            {failed ? (
                 <div className="absolute inset-0 flex items-center justify-center bg-neutral-100 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500">
                     <i className="ri-image-line text-2xl" aria-hidden="true" />
                 </div>
