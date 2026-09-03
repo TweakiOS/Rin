@@ -8,14 +8,20 @@ export async function clearFeedCollectionCaches(cache: CacheImpl) {
 export async function clearFeedCache(cache: CacheImpl, id: number, alias: string | null, newAlias: string | null) {
     await clearFeedCollectionCaches(cache);
 
-    const detailKeys = new Set([`feed_${id}`, `feed_id_${id}`]);
+    const detailKeys = new Set<string>([
+        `feed_${id}`,
+        `feed_id_${id}`,
+        `feed_seo_id_${id}`,
+    ]);
     if (alias) {
         detailKeys.add(`feed_${alias}`);
         detailKeys.add(`feed_alias_${alias}`);
+        detailKeys.add(`feed_seo_alias_${alias}`);
     }
     if (newAlias && newAlias !== alias) {
         detailKeys.add(`feed_${newAlias}`);
         detailKeys.add(`feed_alias_${newAlias}`);
+        detailKeys.add(`feed_seo_alias_${newAlias}`);
     }
 
     for (const key of detailKeys) {

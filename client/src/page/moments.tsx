@@ -1,5 +1,5 @@
-import { Modal } from "@rin/ui"
-import { useContext, useEffect, useRef, useState } from "react"
+import { Modal, Spinner } from "@rin/ui"
+import { lazy, Suspense, useContext, useEffect, useRef, useState } from "react"
 import { Helmet } from 'react-helmet'
 import { client } from "../app/runtime"
 
@@ -10,9 +10,14 @@ import { ProfileContext } from "../state/profile"
 import { tryInt } from "../utils/int"
 import { useSearch } from "wouter"
 import { useAlert, useConfirm } from "../components/dialog"
-import { MarkdownEditor } from "../components/markdown_editor"
 import { Waiting } from "../components/loading"
 import { MomentItem } from "../components/moment_item"
+
+// The editor bundles Monaco (~3.3MB). Readers browsing moments never need it,
+// so it is only fetched once the composer is actually opened.
+const MarkdownEditor = lazy(() =>
+  import("../components/markdown_editor").then((m) => ({ default: m.MarkdownEditor }))
+);
 
 interface Moment {
     id: number;
@@ -239,11 +244,17 @@ export function MomentsPage() {
                     </h2>
                     
                     <div className="bg-w rounded-2xl t-primary">
-                        <MarkdownEditor 
-                            content={content}
-                            setContent={setContent}
-                            height="300px"
-                        />
+                        <Suspense fallback={
+                            <div className="h-[300px] flex items-center justify-center text-theme">
+                                <Spinner size="1.5em" />
+                            </div>
+                        }>
+                            <MarkdownEditor
+                                content={content}
+                                setContent={setContent}
+                                height="300px"
+                            />
+                        </Suspense>
                     </div>
                     
                     <div className="flex justify-end mt-4 space-x-2">

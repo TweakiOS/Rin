@@ -1,38 +1,58 @@
-import { EntitiesPage } from "../page/entities";
-import { EntityPage } from "../page/entity";
 import type { ReactNode } from "react";
-import { useContext } from "react";
+import { lazy, Suspense, useContext } from "react";
 import type { DefaultParams, PathPattern } from "wouter";
 import { Route, Switch } from "wouter";
-import { AdminLayout } from "../components/admin-layout";
 import Footer from "../components/footer";
 import { Header } from "../components/header";
 import { Padding } from "../components/padding";
+import { Spinner } from "@rin/ui";
 import { getHeaderLayoutDefinition } from "../components/site-header/layout-registry";
 import { Tips, TipsPage } from "../components/tips";
 import useTableOfContents from "../hooks/useTableOfContents";
 import { useSiteConfig } from "../hooks/useSiteConfig";
 import { CallbackPage } from "../page/callback";
-import { CompatTasksPage } from "../page/compat-tasks";
 import { ErrorPage } from "../page/error";
 import { FeedPage, TOCHeader } from "../page/feed";
 import { FeedsPage } from "../page/feeds";
-import { FriendsPage } from "../page/friends";
-import { HealthPage } from "../page/health";
-import { HashtagPage } from "../page/hashtag";
-import { HashtagsPage } from "../page/hashtags";
-import { LoginPage } from "../page/login";
-import { MomentsPage } from "../page/moments";
-import { ProfilePage } from "../page/profile";
-import { QueueStatusPage } from "../page/queue-status";
-import { SearchPage } from "../page/search";
-import { Settings } from "../page/settings";
-import { TimelinePage } from "../page/timeline";
-import { WritingPage } from "../page/writing";
 import { ProfileContext } from "../state/profile";
 import { tryInt } from "../utils/int";
 import { useTranslation } from "react-i18next";
-import { CommentsModerationPage } from "../page/comments-moderation";
+
+// Route-level code splitting: only the most-frequented visitor pages (feeds /
+// feed detail) are bundled into the entry chunk. Everything else — especially
+// admin-only pages that pull in Monaco, charts, etc. — is loaded on demand.
+function lazyNamed<K extends string, M extends Record<K, React.ComponentType<any>>>(
+    loader: () => Promise<M>,
+    name: K,
+): React.LazyExoticComponent<M[K]> {
+    return lazy(() => loader().then((m) => ({ default: m[name] })));
+}
+
+const TimelinePage = lazyNamed(() => import("../page/timeline"), "TimelinePage");
+const MomentsPage = lazyNamed(() => import("../page/moments"), "MomentsPage");
+const FriendsPage = lazyNamed(() => import("../page/friends"), "FriendsPage");
+const HashtagsPage = lazyNamed(() => import("../page/hashtags"), "HashtagsPage");
+const HashtagPage = lazyNamed(() => import("../page/hashtag"), "HashtagPage");
+const EntitiesPage = lazyNamed(() => import("../page/entities"), "EntitiesPage");
+const EntityPage = lazyNamed(() => import("../page/entity"), "EntityPage");
+const SearchPage = lazyNamed(() => import("../page/search"), "SearchPage");
+const LoginPage = lazyNamed(() => import("../page/login"), "LoginPage");
+const ProfilePage = lazyNamed(() => import("../page/profile"), "ProfilePage");
+const Settings = lazyNamed(() => import("../page/settings"), "Settings");
+const CommentsModerationPage = lazyNamed(() => import("../page/comments-moderation"), "CommentsModerationPage");
+const HealthPage = lazyNamed(() => import("../page/health"), "HealthPage");
+const QueueStatusPage = lazyNamed(() => import("../page/queue-status"), "QueueStatusPage");
+const CompatTasksPage = lazyNamed(() => import("../page/compat-tasks"), "CompatTasksPage");
+const WritingPage = lazyNamed(() => import("../page/writing"), "WritingPage");
+const AdminLayout = lazyNamed(() => import("../components/admin-layout"), "AdminLayout");
+
+function PageLoading() {
+    return (
+        <div className="w-full h-96 flex flex-col justify-center items-center text-theme ani-show-fast">
+            <Spinner size="2em" />
+        </div>
+    );
+}
 
 export function AppRoutes() {
   const { t } = useTranslation();
@@ -176,7 +196,11 @@ function AppRoute({
 
         return layoutDefinition.renderRouteShell({
           header: <Header>{headerComponent}</Header>,
-          content: <Padding className={paddingClassName}>{resolvedContent}</Padding>,
+          content: (
+            <Padding className={paddingClassName}>
+              <Suspense fallback={<PageLoading />}>{resolvedContent}</Suspense>
+            </Padding>
+          ),
           footer: <Footer />,
           paddingClassName,
         });
@@ -206,9 +230,11 @@ function AdminRoute({
   return (
     <Route path={path}>
       {(params) => (
-        <AdminLayout title={title} description={description}>
-          {typeof content === "function" ? content(params) : content}
-        </AdminLayout>
+        <Suspense fallback={<PageLoading />}>
+          <AdminLayout title={title} description={description}>
+            {typeof content === "function" ? content(params) : content}
+          </AdminLayout>
+        </Suspense>
       )}
     </Route>
   );

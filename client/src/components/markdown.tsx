@@ -1,27 +1,40 @@
 import "katex/dist/katex.min.css";
-import React, { cloneElement, isValidElement, useEffect, useMemo, useRef } from "react";
+import React, { cloneElement, isValidElement, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { Pluggable } from "unified";
 import ReactMarkdown from "react-markdown";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import {
-  base16AteliersulphurpoolLight,
-  vscDarkPlus,
-} from "react-syntax-highlighter/dist/esm/styles/prism";
-import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import gfm from "remark-gfm";
 import remarkMermaid from "../remark/remarkMermaid";
 import { remarkAlert } from "remark-github-blockquote-alert";
 import remarkMath from "remark-math";
 import remarkBreaks from "remark-breaks";
-import Lightbox, { SlideImage } from "yet-another-react-lightbox";
-import Counter from "yet-another-react-lightbox/plugins/counter";
-import Download from "yet-another-react-lightbox/plugins/download";
-import Zoom from "yet-another-react-lightbox/plugins/zoom";
-import "yet-another-react-lightbox/styles.css";
+import type { SlideImage } from "yet-another-react-lightbox";
 import { drawBlurhashToCanvas } from "../utils/blurhash";
 import { useColorMode } from "../utils/darkModeUtils";
 import { parseImageUrlMetadata } from "../utils/image-upload";
 import { useImageLoadState } from "../utils/use-image-load-state";
+
+// Syntax highlighting drags in ~1MB of Prism grammars, so it is split out and
+// only fetched when the article actually contains a fenced code block.
+const MarkdownCodeBlock = lazy(() => import("./code-block"));
+const MarkdownLightbox = lazy(() => import("./markdown-lightbox"));
+
+// Matches the math delimiters remark-math understands: $x$, $$x$$, \(x\), \[x\].
+const MATH_PATTERN = /\$[^$\n]+\$|^\s*\$\$|\\\(|\\\[/m;
+
+/** Plain <pre> shown while the highlighter chunk is still downloading. */
+function CodeBlockFallback({ code, style }: { code: string, style: React.CSSProperties }) {
+  return (
+    <div className="relative group">
+      <pre
+        className="rounded p-4 overflow-x-auto bg-[#eff1f3] dark:bg-[#4a5061]"
+        style={{ margin: 0, ...style }}
+      >
+        <code style={style}>{code}</code>
+      </pre>
+    </div>
+  );
+}
 
 
 function escapeCurrencyDollars(markdown: string): string {
@@ -130,20 +143,39 @@ function MarkdownImage({
 export function Markdown({ content }: { content: string }) {
   const colorMode = useColorMode();
   const [index, setIndex] = React.useState(-1);
+  const [lightboxMounted, setLightboxMounted] = React.useState(false);
   const slides = useRef<SlideImage[]>();
 
   useEffect(() => {
     slides.current = undefined;
   }, [content]);
 
+  // KaTeX is ~600kB and only a minority of posts use math notation, so the
+  // rehype plugin is fetched the first time a post actually needs it.
+  const escaped = useMemo(() => escapeCurrencyDollars(content), [content]);
+  const [rehypeKatex, setRehypeKatex] = useState<Pluggable | null>(null);
+  const hasMath = useMemo(() => MATH_PATTERN.test(escaped), [escaped]);
 
+  useEffect(() => {
+    if (!hasMath || rehypeKatex) return;
+    let cancelled = false;
+    import("rehype-katex").then((module) => {
+      if (!cancelled) setRehypeKatex(module.default);
+    });
+    return () => { cancelled = true; };
+  }, [hasMath, rehypeKatex]);
+
+  const rehypePlugins = useMemo(
+    () => (rehypeKatex ? [rehypeKatex, rehypeRaw] : [rehypeRaw]),
+    [rehypeKatex]
+  );
 
   const Content = useMemo(() => (
     <ReactMarkdown
       className="toc-content min-w-0 dark:text-neutral-300 [overflow-wrap:anywhere]"
       remarkPlugins={[gfm, remarkMermaid, remarkMath, remarkAlert, remarkBreaks]}
-      children={escapeCurrencyDollars(content)}
-      rehypePlugins={[rehypeKatex, rehypeRaw]}
+      children={escaped}
+      rehypePlugins={rehypePlugins}
       components={{
         img({ node, src, ...props }) {
           const offset = node!.position!.start.offset!;
@@ -187,7 +219,6 @@ export function Markdown({ content }: { content: string }) {
           }
         },
         code(props) {
-          const [copied, setCopied] = React.useState(false);
           const { children, className, node, ...rest } = props;
           const match = /language-(\w+)/.exec(className || "");
 
@@ -210,32 +241,15 @@ export function Markdown({ content }: { content: string }) {
           const language = match ? match[1] : "";
 
           if (isCodeBlock) {
+            const code = String(children).replace(/\n$/, "");
             return (
-              <div className="relative group">
-                <SyntaxHighlighter
-                  PreTag="div"
-                  className="rounded"
+              <Suspense fallback={<CodeBlockFallback code={code} style={codeBlockStyle} />}>
+                <MarkdownCodeBlock
                   language={language}
-                  style={
-                    colorMode === "dark"
-                      ? vscDarkPlus
-                      : base16AteliersulphurpoolLight
-                  }
-                  wrapLongLines={true}
-                  codeTagProps={{ style: codeBlockStyle }}
-                >
-                  {String(children).replace(/\n$/, "")}
-                </SyntaxHighlighter>
-                <button className="absolute top-1 right-1 px-2 py-1 bg-w rounded-md text-sm bg-hover select-none invisible group-hover:visible"
-                  onClick={() => {
-                    navigator.clipboard.writeText(String(children));
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  }}
-                >
-                  {copied ? "Copied!" : "Copy"}
-                </button>
-              </div>
+                  code={code}
+                  dark={colorMode === "dark"}
+                />
+              </Suspense>
             );
           } else {
             return (
@@ -392,7 +406,9 @@ export function Markdown({ content }: { content: string }) {
           return <hr className="my-4" {...props} />;
         },
         table: ({ node, className, ...props }) => (
-          <table className={className} {...props} />
+          <div className="md-table-wrap">
+            <table className={className} {...props} />
+          </div>
         ),
         th: ({ node, className, ...props }) => (
           <th className={className} {...props} />
@@ -477,16 +493,24 @@ export function Markdown({ content }: { content: string }) {
     setIndex(index);
   };
 
+  // Mount the lightbox lazily on the first image click, then keep it mounted so
+  // the close animation still plays on subsequent opens.
+  useEffect(() => {
+    if (index >= 0) setLightboxMounted(true);
+  }, [index]);
+
   return (
     <>
       {Content}
-      <Lightbox
-        plugins={[Download, Zoom, Counter]}
-        index={index}
-        slides={slides.current}
-        open={index >= 0}
-        close={() => setIndex(-1)}
-      />
+      {lightboxMounted && (
+        <Suspense fallback={null}>
+          <MarkdownLightbox
+            index={index}
+            slides={slides.current}
+            onClose={() => setIndex(-1)}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

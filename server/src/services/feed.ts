@@ -19,7 +19,7 @@ import {
     updateFeedById,
 } from "../features/feed/repository";
 import { HyperLogLog } from "../utils/hyperloglog";
-import { extractImageWithMetadata } from "../utils/image";
+import { extractImage, extractImageWithMetadata } from "../utils/image";
 import { stripMarkdown } from "../utils/markdown";
 import { syncFeedAISummaryQueueState } from "./feed-ai-summary";
 import { bindTagToPost } from "./tag";
@@ -125,7 +125,7 @@ export function FeedService(): Hono<{
             const avatar = extractImageWithMetadata(content);
             const plainText = stripMarkdown(content);
             return {
-                summary: summary.length > 0 ? summary : plainText.length > 100 ? plainText.slice(0, 100) : plainText,
+                summary: summary.length > 0 ? summary : plainText.length > 200 ? plainText.slice(0, 200) : plainText,
                 hashtags: hashtags.map(({ hashtag }: any) => hashtag),
                 avatar,
                 ...other
@@ -219,6 +219,46 @@ export function FeedService(): Hono<{
             return issues[0]?.message ?? 'Invalid request body';
         },
     }), { message: 'Permission denied', status: 403 }));
+
+    // GET /feed/seo/:id - Lightweight read-only metadata for server-side HTML meta injection.
+    // Must stay free of visit-counting side effects: it is fetched internally by the
+    // Worker for every crawler/HTML request, which would otherwise inflate PV/UV.
+    app.get('/seo/:id', async (c) => {
+        const db = c.get('db');
+        const cache = c.get('cache');
+        const id = c.req.param('id');
+        const id_num = parseFeedId(id);
+        const cacheKey = id_num === null ? `feed_seo_alias_${id}` : `feed_seo_id_${id_num}`;
+        const where = id_num === null ? eq(feeds.alias, id) : eq(feeds.id, id_num);
+
+        const feed = await profileAsync(c, 'feed_seo_cache_db', () => cache.getOrSet(cacheKey, () => db.query.feeds.findFirst({
+            where,
+            columns: {
+                id: true,
+                alias: true,
+                title: true,
+                summary: true,
+                content: true,
+                draft: true,
+                listed: true,
+            },
+        })));
+
+        if (!feed || feed.draft || !feed.listed) {
+            return c.json({ found: false });
+        }
+
+        const plainText = feed.summary.length > 0 ? feed.summary : stripMarkdown(feed.content);
+
+        return c.json({
+            found: true,
+            id: feed.id,
+            alias: feed.alias,
+            title: feed.title,
+            description: plainText.length > 200 ? plainText.slice(0, 200) : plainText,
+            image: extractImage(feed.content),
+        });
+    });
 
     // GET /feed/:id
     app.get('/:id', async (c) => {
@@ -552,7 +592,7 @@ export function SearchService(): Hono<{
             const data = pageResult.rows.map(({ content, hashtags, summary, ...other }: any) => {
                 const plainText = stripMarkdown(content);
                 return {
-                    summary: summary.length > 0 ? summary : plainText.length > 100 ? plainText.slice(0, 100) : plainText,
+                    summary: summary.length > 0 ? summary : plainText.length > 200 ? plainText.slice(0, 200) : plainText,
                     hashtags: hashtags.map(({ hashtag }: any) => hashtag),
                     ...other,
                 };

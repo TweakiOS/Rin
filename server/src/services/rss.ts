@@ -251,8 +251,8 @@ async function generateFeed(env: Env, db: DB, frontendUrl: string, c?: AppContex
             date: other.createdAt,
             description: summary.length > 0
                 ? summary
-                : content.length > 100
-                    ? content.slice(0, 100)
+                : content.length > 200
+                    ? content.slice(0, 200)
                     : content,
             content: contentHtml,
             author: user ? [{ name: user.username }] : undefined,

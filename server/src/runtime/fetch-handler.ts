@@ -1,4 +1,5 @@
 import { getApp } from "./app-instance";
+import { injectHtmlMeta } from "./html-meta";
 
 const ROOT_FEED_PATTERN = /^\/(rss\.xml|atom\.xml|rss\.json|feed\.json|feed\.xml)$/;
 const APP_PUBLIC_ROUTE_PATTERN = /^\/(favicon|favicon\.ico)(?:\/|$)/;
@@ -96,7 +97,11 @@ export async function handleFetch(
 
   const indexResponse = await serveSpaEntry(request, env);
   if (indexResponse) {
-    return indexResponse;
+    const html = await injectHtmlMeta(await indexResponse.text(), request, env);
+    return new Response(html, {
+      status: indexResponse.status,
+      headers: indexResponse.headers,
+    });
   }
 
   return new Response("Hi", { status: 200 });
