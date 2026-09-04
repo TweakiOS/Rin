@@ -7,6 +7,7 @@ import { FlatInset, FlatTabButton } from "@rin/ui";
 import { useAlert } from "./dialog";
 import { useColorMode } from "../utils/darkModeUtils";
 import { buildMarkdownImage, uploadImageFile } from "../utils/image-upload";
+import { convertEchartsHtmlToImages, hasEchartsCharts } from "../utils/echarts-static";
 import { Markdown } from "./markdown";
 
 interface MarkdownEditorProps {
@@ -453,8 +454,49 @@ export function MarkdownEditor({
     );
   }
 
+  // Pasted HTML reports often draw their charts with ECharts, but React never
+  // runs `<script>` tags coming from rendered markup, so those charts show up as
+  // empty gaps. Bake them into real images right after the paste instead.
+  const convertingChartsRef = useRef(false);
+  const convertPastedEcharts = async (ed: editor.IStandaloneCodeEditor) => {
+    if (convertingChartsRef.current) return;
+    const value = ed.getValue();
+    if (!hasEchartsCharts(value)) return;
+
+    convertingChartsRef.current = true;
+    setUploading(true);
+    try {
+      const result = await convertEchartsHtmlToImages(value);
+      const model = ed.getModel();
+      if (!result || result.replaced.length === 0 || !model) {
+        showAlert(t("markdown_editor.echarts.failed"));
+        return;
+      }
+      ed.pushUndoStop();
+      ed.executeEdits("rin.echarts-to-image", [
+        {
+          range: model.getFullModelRange(),
+          text: result.content,
+          forceMoveMarkers: true,
+        },
+      ]);
+      ed.pushUndoStop();
+      setContent(ed.getValue());
+      showAlert(
+        t("markdown_editor.echarts.converted", { count: result.replaced.length })
+      );
+    } finally {
+      convertingChartsRef.current = false;
+      setUploading(false);
+    }
+  };
+
   const handleEditorMount = (ed: editor.IStandaloneCodeEditor) => {
     editorRef.current = ed;
+
+    ed.onDidPaste(() => {
+      void convertPastedEcharts(ed);
+    });
 
     ed.addAction({
       id: "rin.markdown.selectAll",

@@ -134,6 +134,11 @@
   "draft_bin": "下書き",
   "edit": "編集",
   "markdown_editor": {
+    "echarts": {
+      "converting": "ECharts グラフを検出しました。画像に変換しています…",
+      "converted": "{{count}} 件のグラフを画像に変換し、スクリプトを削除しました",
+      "failed": "グラフの変換に失敗しました：echarts スクリプトを読み込めないかタイムアウトしました（グラフは空白のままになる可能性があります）"
+    },
     "placeholder": {
       "bold": "太字テキスト",
       "code": "コード",
