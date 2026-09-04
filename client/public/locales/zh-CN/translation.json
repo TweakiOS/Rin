@@ -166,11 +166,6 @@
   "draft_bin": "草稿箱",
   "edit": "编辑",
   "markdown_editor": {
-    "echarts": {
-      "converting": "检测到 ECharts 图表，正在转成图片…",
-      "converted": "已把 {{count}} 张图表转成图片，并移除相关脚本",
-      "failed": "图表转换失败：echarts 脚本未能加载或渲染超时（图表位置可能仍为空白）"
-    },
     "draft": {
       "clear": "清空草稿",
       "clear_confirm": "清空当前本地草稿？未发布的修改会丢失。"

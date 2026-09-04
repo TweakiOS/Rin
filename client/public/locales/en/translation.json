@@ -166,11 +166,6 @@
   "draft_bin": "Draft Bin",
   "edit": "Edit",
   "markdown_editor": {
-    "echarts": {
-      "converting": "Detected ECharts charts, converting to images…",
-      "converted": "Converted {{count}} chart(s) to images and removed the scripts",
-      "failed": "Chart conversion failed: the echarts script could not load or timed out (charts may still be blank)"
-    },
     "draft": {
       "clear": "Clear draft",
       "clear_confirm": "Clear the local draft? Unpublished changes will be lost."
