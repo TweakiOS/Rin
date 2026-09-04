@@ -1,7 +1,7 @@
 import "katex/dist/katex.min.css";
-import React, { useCallback, cloneElement, isValidElement, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, { cloneElement, isValidElement, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Pluggable } from "unified";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import gfm from "remark-gfm";
 import remarkMermaid from "../remark/remarkMermaid";
@@ -181,25 +181,12 @@ export function Markdown({ content }: { content: string }) {
     [rehypeKatex]
   );
 
-  // react-markdown's defaultUrlTransform only allows http/https/mailto/... and
-  // silently strips `data:` URLs — which would blank out self-contained pasted
-  // reports that embed their charts as `data:image/png;base64,...`. Allow image
-  // data URIs through (an <img> never executes scripts, so this is safe) and
-  // delegate everything else to the default rules.
-  const urlTransform = useCallback((url: string) => {
-    if (/^data:image\/(png|jpeg|jpg|gif|webp|avif|bmp);base64,/i.test(url)) {
-      return url;
-    }
-    return defaultUrlTransform(url);
-  }, []);
-
   const Content = useMemo(() => (
     <ReactMarkdown
       className="toc-content min-w-0 dark:text-neutral-300 [overflow-wrap:anywhere]"
       remarkPlugins={[gfm, remarkMermaid, remarkMath, remarkAlert, remarkBreaks]}
       children={escaped}
       rehypePlugins={rehypePlugins}
-      urlTransform={urlTransform}
       components={{
         img({ node, src, ...props }) {
           const offset = node!.position!.start.offset!;

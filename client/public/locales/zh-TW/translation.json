@@ -134,11 +134,6 @@
   "draft_bin": "草稿箱",
   "edit": "編輯",
   "markdown_editor": {
-    "echarts": {
-      "converting": "偵測到 ECharts 圖表，正在轉成圖片…",
-      "converted": "已把 {{count}} 張圖表轉成圖片，並移除相關腳本",
-      "failed": "圖表轉換失敗：echarts 腳本未能載入或渲染逾時（圖表位置可能仍為空白）"
-    },
     "placeholder": {
       "bold": "粗體文字",
       "code": "程式碼",
