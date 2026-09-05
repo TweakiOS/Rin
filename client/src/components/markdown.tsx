@@ -14,6 +14,7 @@ import { useColorMode } from "../utils/darkModeUtils";
 import { parseImageUrlMetadata } from "../utils/image-upload";
 import { useImageLoadState } from "../utils/use-image-load-state";
 import { escapeCurrencyDollars } from "../utils/escapeCurrency";
+import remarkCjkFriendly from "remark-cjk-friendly";
 
 // Syntax highlighting drags in ~1MB of Prism grammars, so it is split out and
 // only fetched when the article actually contains a fenced code block.
@@ -193,7 +194,7 @@ export function Markdown({ content }: { content: string }) {
   const Content = useMemo(() => (
     <ReactMarkdown
       className="toc-content min-w-0 dark:text-neutral-300 [overflow-wrap:anywhere]"
-      remarkPlugins={[gfm, remarkMermaid, remarkMath, remarkAlert, remarkBreaks]}
+      remarkPlugins={[gfm, remarkCjkFriendly, remarkMermaid, remarkMath, remarkAlert, remarkBreaks]}
       children={escaped}
       rehypePlugins={rehypePlugins}
       components={{
