@@ -4,6 +4,7 @@ import {
   base16AteliersulphurpoolLight,
   vscDarkPlus,
 } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useColorMode } from "../utils/darkModeUtils";
 
 // The bundled Prism themes ship a fixed background (lavender-ish in the light
 // theme, near-black in the dark one) that clashes with the site surface and
@@ -37,7 +38,6 @@ const codeBlockStyle = {
 export interface MarkdownCodeBlockProps {
   language: string;
   code: string;
-  dark: boolean;
 }
 
 /**
@@ -45,8 +45,15 @@ export interface MarkdownCodeBlockProps {
  * registers every Prism grammar (~1MB of JS). It lives in its own chunk so
  * articles without code blocks never download it.
  */
-export default function MarkdownCodeBlock({ language, code, dark }: MarkdownCodeBlockProps) {
+export default function MarkdownCodeBlock({ language, code }: MarkdownCodeBlockProps) {
   const [copied, setCopied] = useState(false);
+  // Subscribe to the color mode here instead of taking a `dark` prop: the
+  // markdown tree in `markdown.tsx` is memoized on the source text, so a prop
+  // would be frozen on first render and only catch up after a reload. Reading
+  // it locally keeps the block in sync when the system scheme changes while
+  // avoiding a re-parse of the whole article.
+  const colorMode = useColorMode();
+  const dark = colorMode === "dark";
 
   return (
     <div className="relative group">

@@ -10,7 +10,6 @@ import remarkMath from "remark-math";
 import remarkBreaks from "remark-breaks";
 import type { SlideImage } from "yet-another-react-lightbox";
 import { drawBlurhashToCanvas } from "../utils/blurhash";
-import { useColorMode } from "../utils/darkModeUtils";
 import { parseImageUrlMetadata } from "../utils/image-upload";
 import { useImageLoadState } from "../utils/use-image-load-state";
 import { escapeCurrencyDollars } from "../utils/escapeCurrency";
@@ -143,7 +142,6 @@ function MarkdownImage({
 }
 
 export function Markdown({ content }: { content: string }) {
-  const colorMode = useColorMode();
   const [index, setIndex] = React.useState(-1);
   const [lightboxMounted, setLightboxMounted] = React.useState(false);
   const slides = useRef<SlideImage[]>();
@@ -268,7 +266,6 @@ export function Markdown({ content }: { content: string }) {
                 <MarkdownCodeBlock
                   language={language}
                   code={code}
-                  dark={colorMode === "dark"}
                 />
               </Suspense>
             );
