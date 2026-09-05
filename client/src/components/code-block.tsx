@@ -5,6 +5,27 @@ import {
   vscDarkPlus,
 } from "react-syntax-highlighter/dist/esm/styles/prism";
 
+// The bundled Prism themes ship a fixed background (lavender-ish in the light
+// theme, near-black in the dark one) that clashes with the site surface and
+// never adapts on its own. Override only the block background so it follows
+// the site color mode (which tracks the system), matching the inline-code
+// and lazy-load fallback colors. Token colors stay from the theme.
+const lightStyle = {
+  ...base16AteliersulphurpoolLight,
+  'pre[class*="language-"]': {
+    ...(base16AteliersulphurpoolLight as any)['pre[class*="language-"]'],
+    background: "#eff1f3",
+  },
+};
+
+const darkStyle = {
+  ...vscDarkPlus,
+  'pre[class*="language-"]': {
+    ...(vscDarkPlus as any)['pre[class*="language-"]'],
+    background: "#4a5061",
+  },
+};
+
 const codeBlockStyle = {
   fontFamily: 'ui-monospace, "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
   fontSize: "14px",
@@ -33,7 +54,7 @@ export default function MarkdownCodeBlock({ language, code, dark }: MarkdownCode
         PreTag="div"
         className="rounded"
         language={language}
-        style={dark ? vscDarkPlus : base16AteliersulphurpoolLight}
+        style={dark ? darkStyle : lightStyle}
         wrapLongLines={true}
         codeTagProps={{ style: codeBlockStyle }}
       >
