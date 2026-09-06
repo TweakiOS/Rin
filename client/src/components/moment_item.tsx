@@ -30,7 +30,7 @@ export function MomentItem({
     const { createdAt, updatedAt } = moment;
     
     return (
-        <div className="min-w-0 rounded-lg bg-w p-4">
+        <div className="min-w-0 rounded-2xl bg-w p-3 sm:p-4">
             <div className="flex min-w-0 justify-between gap-3">
                 <div className="flex min-w-0 items-center space-x-3">
                     <ImageWithFallback
