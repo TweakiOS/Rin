@@ -454,11 +454,16 @@ export function WritingPage({ id }: { id?: number }) {
         <meta property="og:type" content="article" />
         <meta property="og:url" content={document.URL} />
       </Helmet>
-      <div className="mt-2 flex flex-col gap-4 t-primary sm:gap-6">
-        {MetaInput({ className: "p-4 sm:p-5 md:p-6" })}
-
-        <FlatPanel className="overflow-hidden p-0">
-          <MarkdownEditor content={content} setContent={setContent} height='680px' />
+      <div className="flex flex-col gap-2 t-primary sm:gap-6">
+        {MetaInput({
+          className: "rounded-xl border border-black/10 p-2 sm:rounded-2xl sm:p-5 dark:border-white/10",
+        })}
+        <FlatPanel className="overflow-x-hidden rounded-xl border border-black/10 p-0 sm:rounded-2xl dark:border-white/10">
+          <MarkdownEditor
+            content={content}
+            setContent={setContent}
+            height="min(680px, calc(100dvh - 13rem))"
+          />
         </FlatPanel>
       </div>
       <AlertUI />

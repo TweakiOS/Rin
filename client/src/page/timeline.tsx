@@ -94,21 +94,26 @@ export function TimelinePage() {
     )
 }
 
-export function FeedItem({ id, title, createdAt }: { id: string, title: string, createdAt: Date }) {
-    const formatter = new Intl.DateTimeFormat('en-US', { day: '2-digit', month: '2-digit' });
+export function FeedItem({ id, title, createdAt }: { id: string; title: string; createdAt: Date }) {
+    const formatter = new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "2-digit" });
     return (
-        <div className="flex min-w-0 flex-row pl-4 sm:pl-8">
+        <div className="flex min-w-0 flex-row pl-3 sm:pl-8">
             <div className="flex shrink-0 flex-row items-center">
-                <div className="w-2 h-2 bg-theme rounded-full"></div>
+                <div className="h-2 w-2 rounded-full bg-theme"></div>
             </div>
-            <div className="m-2 flex min-w-0 flex-1 flex-row items-center space-x-4 rounded-2xl duration-300">
+            <div className="ml-3 flex min-w-0 flex-1 flex-row items-center space-x-4 py-2">
                 <span className="shrink-0 text-sm t-secondary" title={new Date(createdAt).toLocaleString()}>
                     {formatter.format(new Date(createdAt))}
                 </span>
-                <Link href={`/feed/${id}`} target="_blank" rel="noopener noreferrer" className="min-w-0 break-words text-base t-primary hover:text-theme text-pretty [overflow-wrap:anywhere]">
+                <Link
+                    href={`/feed/${id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-w-0 break-words text-pretty text-base t-primary hover:text-theme [overflow-wrap:anywhere]"
+                >
                     {title}
                 </Link>
             </div>
         </div>
-    )
+    );
 }

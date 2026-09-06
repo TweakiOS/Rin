@@ -61,8 +61,8 @@ export function LoginPage() {
     };
 
     return (
-        <div className="flex items-center justify-center my-8">
-            <div className="bg-w w-full max-w-md flex flex-col items-center justify-between p-8 space-y-4 t-primary rounded-2xl shadow-lg">
+        <div className="my-8 flex items-center justify-center">
+            <div className="flex w-full max-w-md flex-col items-center justify-between space-y-4 rounded-2xl bg-w p-4 shadow-lg t-primary sm:p-8">
                 <p className="text-2xl font-bold">{t('login.title')}</p>
 
                 {/* Error message */}

@@ -1,6 +1,6 @@
 import Editor from "@monaco-editor/react";
-import { editor, KeyCode, KeyMod, Range, Selection } from "monaco-editor";
-import React, { useRef, useState, useEffect } from "react";
+import { editor, Range, Selection } from "monaco-editor";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Loading from "react-loading";
 import { FlatInset, FlatTabButton } from "@rin/ui";
@@ -16,38 +16,34 @@ interface MarkdownEditorProps {
   height?: string;
 }
 
-type EditorPosition = {
-  lineNumber: number;
-  column: number;
+type TextRange = {
+  start: number;
+  end: number;
 };
 
-function positionAfterText(startLineNumber: number, startColumn: number, text: string): EditorPosition {
-  const lines = text.split("\n");
+function useCoarsePointer() {
+  const [coarse, setCoarse] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(pointer: coarse)").matches : false,
+  );
 
-  if (lines.length === 1) {
-    return {
-      lineNumber: startLineNumber,
-      column: startColumn + text.length,
-    };
-  }
+  useEffect(() => {
+    const media = window.matchMedia("(pointer: coarse)");
+    const onChange = () => setCoarse(media.matches);
+    onChange();
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
 
-  return {
-    lineNumber: startLineNumber + lines.length - 1,
-    column: lines[lines.length - 1].length + 1,
-  };
+  return coarse;
 }
 
-function selectAllInEditor(ed: editor.IStandaloneCodeEditor) {
-  const model = ed.getModel();
-  if (!model) return;
-
-  const lastLine = Math.max(1, model.getLineCount());
-  const lastColumn = model.getLineMaxColumn(lastLine);
-  const selection = new Selection(1, 1, lastLine, lastColumn);
-
-  ed.focus();
-  ed.setSelection(selection);
-  ed.revealRangeInCenterIfOutsideViewport(selection);
+function neutralizePreviewStyles(markdown: string) {
+  return markdown.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, (block) =>
+    block
+      .replace(/\bhtml\s*\{/gi, ".rin-preview-root{")
+      .replace(/\bbody\s*\{/gi, ".rin-preview-root{")
+      .replace(/(^|})\s*\*\s*\{/g, "$1.rin-preview-root *{"),
+  );
 }
 
 function MarkdownToolButton({
@@ -85,192 +81,204 @@ export function MarkdownEditor({
 }: MarkdownEditorProps) {
   const { t } = useTranslation();
   const colorMode = useColorMode();
+  const useNativeEditor = useCoarsePointer();
   const editorRef = useRef<editor.IStandaloneCodeEditor>();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
+  const pendingSelectionRef = useRef<TextRange | null>(null);
   const [preview, setPreview] = useState<"edit" | "preview" | "comparison">("edit");
   const [uploading, setUploading] = useState(false);
   const { showAlert, AlertUI } = useAlert();
 
-  async function insertImage(
-    file: File,
-    range: NonNullable<ReturnType<editor.IStandaloneCodeEditor["getSelection"]>>,
-    showAlert: (msg: string) => void,
-  ) {
-    try {
-      const result = await uploadImageFile(file);
-      const editorInstance = editorRef.current;
-      if (!editorInstance) return;
-      editorInstance.executeEdits(undefined, [
-        {
-          range,
-          text: buildMarkdownImage(file.name, result.url, {
-            blurhash: result.blurhash,
-            width: result.width,
-            height: result.height,
-          }),
-        },
-      ]);
-    } catch (error) {
-      console.error(error);
-      showAlert(error instanceof Error ? error.message : t("upload.failed"));
-    }
-  }
+  const showSource = preview !== "preview";
+  const showPreview = preview !== "edit";
 
-  const getEditorAndSelection = () => {
+  const getValue = () => {
+    if (useNativeEditor) {
+      return textareaRef.current?.value ?? content;
+    }
+    return editorRef.current?.getModel()?.getValue() ?? content;
+  };
+
+  const getSelectionOffsets = (): TextRange => {
+    if (useNativeEditor) {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return { start: content.length, end: content.length };
+      }
+      const start = Math.min(textarea.selectionStart, textarea.selectionEnd);
+      const end = Math.max(textarea.selectionStart, textarea.selectionEnd);
+      return { start, end };
+    }
+
     const editorInstance = editorRef.current;
     const model = editorInstance?.getModel();
     const selection = editorInstance?.getSelection();
-
     if (!editorInstance || !model || !selection) {
-      return null;
+      const value = getValue();
+      return { start: value.length, end: value.length };
     }
 
-    return { editorInstance, model, selection };
+    const start = model.getOffsetAt({
+      lineNumber: selection.startLineNumber,
+      column: selection.startColumn,
+    });
+    const end = model.getOffsetAt({
+      lineNumber: selection.endLineNumber,
+      column: selection.endColumn,
+    });
+    return start <= end ? { start, end } : { start: end, end: start };
   };
 
-  const replaceSelection = (selection: Selection, text: string, nextSelection?: Selection) => {
-    const editorInstance = editorRef.current;
-    if (!editorInstance) return;
+  const applySelection = (range: TextRange) => {
+    if (useNativeEditor) {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(range.start, range.end);
+      return;
+    }
 
+    const editorInstance = editorRef.current;
+    const model = editorInstance?.getModel();
+    if (!editorInstance || !model) return;
+
+    const start = model.getPositionAt(range.start);
+    const end = model.getPositionAt(range.end);
+    editorInstance.setSelection(
+      new Selection(start.lineNumber, start.column, end.lineNumber, end.column),
+    );
+    editorInstance.revealRangeInCenterIfOutsideViewport(
+      new Range(start.lineNumber, start.column, end.lineNumber, end.column),
+    );
+    editorInstance.focus();
+  };
+
+  const replaceRange = (start: number, end: number, text: string, next?: TextRange) => {
+    const nextSelection = next ?? { start: start + text.length, end: start + text.length };
+
+    if (useNativeEditor) {
+      const current = getValue();
+      const nextValue = `${current.slice(0, start)}${text}${current.slice(end)}`;
+      pendingSelectionRef.current = nextSelection;
+      setContent(nextValue);
+      requestAnimationFrame(() => {
+        const pending = pendingSelectionRef.current;
+        if (!pending) return;
+        applySelection(pending);
+        pendingSelectionRef.current = null;
+      });
+      return;
+    }
+
+    const editorInstance = editorRef.current;
+    const model = editorInstance?.getModel();
+    if (!editorInstance || !model) return;
+
+    const startPosition = model.getPositionAt(start);
+    const endPosition = model.getPositionAt(end);
     editorInstance.executeEdits("markdown-toolbar", [
       {
-        range: selection,
+        range: new Range(
+          startPosition.lineNumber,
+          startPosition.column,
+          endPosition.lineNumber,
+          endPosition.column,
+        ),
         text,
         forceMoveMarkers: true,
       },
     ]);
     setContent(editorInstance.getValue());
-
-    if (nextSelection) {
-      editorInstance.setSelection(nextSelection);
-    } else {
-      const position = positionAfterText(selection.startLineNumber, selection.startColumn, text);
-      editorInstance.setPosition(position);
-    }
-
-    editorInstance.focus();
+    applySelection(nextSelection);
   };
 
   const wrapSelection = (prefix: string, suffix: string, fallback: string) => {
-    const editorState = getEditorAndSelection();
-    if (!editorState) return;
-
-    const { model, selection } = editorState;
-    const selectedText = model.getValueInRange(selection);
+    const { start, end } = getSelectionOffsets();
+    const selectedText = getValue().slice(start, end);
     const innerText = selectedText || fallback;
     const insertedText = `${prefix}${innerText}${suffix}`;
-    const innerStart = positionAfterText(selection.startLineNumber, selection.startColumn, prefix);
-    const innerEnd = positionAfterText(innerStart.lineNumber, innerStart.column, innerText);
-    const end = positionAfterText(selection.startLineNumber, selection.startColumn, insertedText);
-    const nextSelection = selectedText
-      ? new Selection(end.lineNumber, end.column, end.lineNumber, end.column)
-      : new Selection(innerStart.lineNumber, innerStart.column, innerEnd.lineNumber, innerEnd.column);
-
-    replaceSelection(selection, insertedText, nextSelection);
+    const innerStart = start + prefix.length;
+    const innerEnd = innerStart + innerText.length;
+    replaceRange(
+      start,
+      end,
+      insertedText,
+      selectedText
+        ? { start: start + insertedText.length, end: start + insertedText.length }
+        : { start: innerStart, end: innerEnd },
+    );
   };
 
   const insertLink = () => {
-    const editorState = getEditorAndSelection();
-    if (!editorState) return;
-
-    const { model, selection } = editorState;
-    const selectedText = model.getValueInRange(selection);
+    const { start, end } = getSelectionOffsets();
+    const selectedText = getValue().slice(start, end);
     const label = selectedText || t("markdown_editor.placeholder.link_text");
     const url = t("markdown_editor.placeholder.link_url");
     const prefix = `[${label}](`;
     const insertedText = `${prefix}${url})`;
-    const urlStart = positionAfterText(selection.startLineNumber, selection.startColumn, prefix);
-    const urlEnd = positionAfterText(urlStart.lineNumber, urlStart.column, url);
-
-    replaceSelection(
-      selection,
-      insertedText,
-      new Selection(urlStart.lineNumber, urlStart.column, urlEnd.lineNumber, urlEnd.column),
-    );
+    const urlStart = start + prefix.length;
+    replaceRange(start, end, insertedText, {
+      start: urlStart,
+      end: urlStart + url.length,
+    });
   };
 
   const insertMarkdownImage = () => {
-    const editorState = getEditorAndSelection();
-    if (!editorState) return;
-
-    const { model, selection } = editorState;
-    const selectedText = model.getValueInRange(selection);
+    const { start, end } = getSelectionOffsets();
+    const selectedText = getValue().slice(start, end);
     const alt = selectedText || t("markdown_editor.placeholder.image_alt");
     const url = t("markdown_editor.placeholder.image_url");
     const prefix = `![${alt}](`;
     const insertedText = `${prefix}${url})`;
-    const urlStart = positionAfterText(selection.startLineNumber, selection.startColumn, prefix);
-    const urlEnd = positionAfterText(urlStart.lineNumber, urlStart.column, url);
-
-    replaceSelection(
-      selection,
-      insertedText,
-      new Selection(urlStart.lineNumber, urlStart.column, urlEnd.lineNumber, urlEnd.column),
-    );
+    const urlStart = start + prefix.length;
+    replaceRange(start, end, insertedText, {
+      start: urlStart,
+      end: urlStart + url.length,
+    });
   };
 
   const insertCodeBlock = () => {
-    const editorState = getEditorAndSelection();
-    if (!editorState) return;
-
-    const { model, selection } = editorState;
-    const selectedText = model.getValueInRange(selection);
+    const { start, end } = getSelectionOffsets();
+    const selectedText = getValue().slice(start, end);
     const innerText = selectedText || t("markdown_editor.placeholder.code_block");
     const prefix = "```\n";
     const insertedText = `${prefix}${innerText}\n\`\`\``;
-    const innerStart = positionAfterText(selection.startLineNumber, selection.startColumn, prefix);
-    const innerEnd = positionAfterText(innerStart.lineNumber, innerStart.column, innerText);
-    const end = positionAfterText(selection.startLineNumber, selection.startColumn, insertedText);
-    const nextSelection = selectedText
-      ? new Selection(end.lineNumber, end.column, end.lineNumber, end.column)
-      : new Selection(innerStart.lineNumber, innerStart.column, innerEnd.lineNumber, innerEnd.column);
-
-    replaceSelection(selection, insertedText, nextSelection);
+    const innerStart = start + prefix.length;
+    replaceRange(
+      start,
+      end,
+      insertedText,
+      selectedText
+        ? { start: start + insertedText.length, end: start + insertedText.length }
+        : { start: innerStart, end: innerStart + innerText.length },
+    );
   };
 
   const insertHorizontalRule = () => {
-    const editorState = getEditorAndSelection();
-    if (!editorState) return;
-
-    replaceSelection(editorState.selection, "\n---\n");
+    const { start, end } = getSelectionOffsets();
+    replaceRange(start, end, "\n---\n");
   };
 
   const formatSelectedLines = (
     formatter: (line: string, index: number) => string,
     emptyLineFallback: string,
   ) => {
-    const editorState = getEditorAndSelection();
-    if (!editorState) return;
-
-    const { editorInstance, model, selection } = editorState;
-    const startLineNumber = selection.startLineNumber;
-    const endLineNumber =
-      selection.endLineNumber > selection.startLineNumber && selection.endColumn === 1
-        ? selection.endLineNumber - 1
-        : selection.endLineNumber;
-    const currentLine = model.getLineContent(startLineNumber);
-    const isEmptySingleLine = selection.isEmpty() && currentLine.trim().length === 0;
-    const lines = isEmptySingleLine
-      ? [emptyLineFallback]
-      : Array.from({ length: endLineNumber - startLineNumber + 1 }, (_, index) => {
-          const lineNumber = startLineNumber + index;
-          return formatter(model.getLineContent(lineNumber), index);
-        });
-    const targetEndLine = isEmptySingleLine ? startLineNumber : endLineNumber;
-    const range = new Range(startLineNumber, 1, targetEndLine, model.getLineMaxColumn(targetEndLine));
-    const insertedText = lines.join("\n");
-    const end = positionAfterText(startLineNumber, 1, insertedText);
-
-    editorInstance.executeEdits("markdown-toolbar", [
-      {
-        range,
-        text: insertedText,
-        forceMoveMarkers: true,
-      },
-    ]);
-    setContent(editorInstance.getValue());
-    editorInstance.setPosition(end);
-    editorInstance.focus();
+    const value = getValue();
+    const selection = getSelectionOffsets();
+    const lineStart = value.lastIndexOf("\n", selection.start - 1) + 1;
+    const endsAtLineStart = selection.end > selection.start && value[selection.end - 1] === "\n";
+    const rawEnd = endsAtLineStart ? selection.end - 1 : selection.end;
+    const lineEndLookup = value.indexOf("\n", rawEnd);
+    const lineEnd = lineEndLookup === -1 ? value.length : lineEndLookup;
+    const block = value.slice(lineStart, lineEnd);
+    const isEmptySingleLine = selection.start === selection.end && block.trim().length === 0;
+    const sourceLines = isEmptySingleLine ? [emptyLineFallback] : block.split("\n");
+    const insertedText = sourceLines.map((line, index) => formatter(line, index)).join("\n");
+    replaceRange(lineStart, lineEnd, insertedText, {
+      start: lineStart + insertedText.length,
+      end: lineStart + insertedText.length,
+    });
   };
 
   const formatHeading = () => {
@@ -302,81 +310,81 @@ export function MarkdownEditor({
   };
 
   const formatTable = () => {
-    const editorState = getEditorAndSelection();
-    if (!editorState) return;
-
-    const { model, selection } = editorState;
-    const fullText = model.getValue();
-    const from = model.getOffsetAt({
-      lineNumber: selection.startLineNumber,
-      column: selection.startColumn,
-    });
-    const to = model.getOffsetAt({
-      lineNumber: selection.endLineNumber,
-      column: selection.endColumn,
-    });
-
-    const range = findMarkdownTableRange(fullText, from, to);
+    const value = getValue();
+    const { start, end } = getSelectionOffsets();
+    const range = findMarkdownTableRange(value, start, end);
     if (!range) {
       showAlert(t("markdown_editor.table.not_found"));
       return;
     }
 
-    const markdown = fullText.slice(range.start, range.end);
-    const html = markdownTableToHtml(markdown);
+    const html = markdownTableToHtml(value.slice(range.start, range.end));
     if (!html) {
       showAlert(t("markdown_editor.table.invalid"));
       return;
     }
 
-    const start = model.getPositionAt(range.start);
-    const end = model.getPositionAt(range.end);
-    replaceSelection(
-      new Selection(start.lineNumber, start.column, end.lineNumber, end.column),
-      html,
-    );
+    replaceRange(range.start, range.end, html);
   };
 
   const clearTableFormat = () => {
-    const editorState = getEditorAndSelection();
-    if (!editorState) return;
-
-    const { model, selection } = editorState;
-    const fullText = model.getValue();
-    const from = model.getOffsetAt({
-      lineNumber: selection.startLineNumber,
-      column: selection.startColumn,
-    });
-    const to = model.getOffsetAt({
-      lineNumber: selection.endLineNumber,
-      column: selection.endColumn,
-    });
-
-    const range = findHtmlTableRange(fullText, from, to);
+    const value = getValue();
+    const { start, end } = getSelectionOffsets();
+    const range = findHtmlTableRange(value, start, end);
     if (!range) {
       showAlert(t("markdown_editor.table.html_not_found"));
       return;
     }
 
-    const html = fullText.slice(range.start, range.end);
-    const markdown = htmlTableToMarkdown(html);
+    const markdown = htmlTableToMarkdown(value.slice(range.start, range.end));
     if (!markdown) {
       showAlert(t("markdown_editor.table.html_invalid"));
       return;
     }
 
-    const start = model.getPositionAt(range.start);
-    const end = model.getPositionAt(range.end);
-    replaceSelection(
-      new Selection(start.lineNumber, start.column, end.lineNumber, end.column),
-      markdown,
-    );
+    replaceRange(range.start, range.end, markdown);
   };
 
   const handleSelectAll = () => {
-    const editorInstance = editorRef.current;
-    if (!editorInstance) return;
-    selectAllInEditor(editorInstance);
+    const value = getValue();
+    applySelection({ start: 0, end: value.length });
+  };
+
+  const insertImageAtSelection = async (file: File, range = getSelectionOffsets()) => {
+    try {
+      const result = await uploadImageFile(file);
+      replaceRange(
+        range.start,
+        range.end,
+        buildMarkdownImage(file.name, result.url, {
+          blurhash: result.blurhash,
+          width: result.width,
+          height: result.height,
+        }),
+      );
+    } catch (error) {
+      console.error(error);
+      showAlert(error instanceof Error ? error.message : t("upload.failed"));
+    }
+  };
+
+  const uploadFiles = (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+
+    const range = getSelectionOffsets();
+    setUploading(true);
+    void Promise.all(
+      list.map((file) => {
+        if (file.size > 5 * 1024000) {
+          showAlert(t("upload.failed$size", { size: 5 }));
+          return Promise.resolve();
+        }
+        return insertImageAtSelection(file, range);
+      }),
+    ).finally(() => {
+      setUploading(false);
+    });
   };
 
   const markdownActions = [
@@ -393,26 +401,8 @@ export function MarkdownEditor({
     { key: "code-block", icon: "ri-code-box-line", label: t("markdown_editor.toolbar.code_block"), onClick: insertCodeBlock },
     { key: "horizontal-rule", icon: "ri-separator", label: t("markdown_editor.toolbar.horizontal_rule"), onClick: insertHorizontalRule },
     { key: "format-table", icon: "ri-table-2", label: t("markdown_editor.toolbar.format_table"), onClick: formatTable },
-    { key: "clear-table-format", icon: "ri-format-clear", label: t("markdown_editor.toolbar.clear_table_format"), onClick: clearTableFormat },  ];
-
-  const handlePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
-    const clipboardData = event.clipboardData;
-    if (clipboardData.files.length === 1) {
-      const editorInstance = editorRef.current;
-      if (!editorInstance) return;
-      editorInstance.trigger(undefined, "undo", undefined);
-      setUploading(true);
-      const myfile = clipboardData.files[0] as File;
-      const selection = editorInstance.getSelection();
-      if (!selection) {
-        setUploading(false);
-        return;
-      }
-      void insertImage(myfile, selection, showAlert).finally(() => {
-        setUploading(false);
-      });
-    }
-  };
+    { key: "clear-table-format", icon: "ri-format-clear", label: t("markdown_editor.toolbar.clear_table_format"), onClick: clearTableFormat },
+  ];
 
   function UploadImageButton() {
     const uploadRef = useRef<HTMLInputElement>(null);
@@ -421,23 +411,8 @@ export function MarkdownEditor({
     const upChange = (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = event.currentTarget.files;
       if (!files) return;
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (file.size > 5 * 1024000) {
-          showAlert(t("upload.failed$size", { size: 5 }));
-          uploadRef.current!.value = "";
-        } else {
-          const editorInstance = editorRef.current;
-          if (!editorInstance) return;
-          const selection = editorInstance.getSelection();
-          if (!selection) return;
-          setUploading(true);
-          void insertImage(file, selection, showAlert).finally(() => {
-            setUploading(false);
-          });
-        }
-      }
+      uploadFiles(files);
+      event.currentTarget.value = "";
     };
 
     return (
@@ -453,19 +428,22 @@ export function MarkdownEditor({
     );
   }
 
+  const handlePaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    const files = event.clipboardData?.files;
+    if (!files || files.length === 0) return;
+
+    const imageFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+
+    event.preventDefault();
+    if (!useNativeEditor) {
+      editorRef.current?.trigger(undefined, "undo", undefined);
+    }
+    uploadFiles(imageFiles);
+  };
+
   const handleEditorMount = (ed: editor.IStandaloneCodeEditor) => {
     editorRef.current = ed;
-
-    ed.addAction({
-      id: "rin.markdown.selectAll",
-      label: t("markdown_editor.select_all"),
-      keybindings: [KeyMod.CtrlCmd | KeyCode.KeyA],
-      precondition: "editorTextFocus",
-      keybindingContext: "!suggestWidgetVisible",
-      contextMenuGroupId: "9_cutcopypaste",
-      contextMenuOrder: 0,
-      run: selectAllInEditor,
-    });
 
     ed.onDidCompositionStart(() => {
       isComposingRef.current = true;
@@ -488,21 +466,24 @@ export function MarkdownEditor({
   };
 
   useEffect(() => {
+    if (useNativeEditor) return;
     const editorInstance = editorRef.current;
-    if (!editorInstance) return;
-
-    const model = editorInstance.getModel();
-    if (!model) return;
-
-    const editorValue = model.getValue();
-    if (editorValue !== content) {
+    const model = editorInstance?.getModel();
+    if (!editorInstance || !model) return;
+    if (model.getValue() !== content) {
       editorInstance.setValue(content);
     }
-  }, [content]);
+  }, [content, useNativeEditor]);
+
+  useEffect(() => {
+    if (useNativeEditor && preview === "comparison") {
+      setPreview("edit");
+    }
+  }, [preview, useNativeEditor]);
 
   return (
     <div className="flex flex-col gap-0 sm:gap-3">
-      <FlatInset className="flex flex-wrap items-center gap-2 border-0 border-b border-black/10 rounded-none bg-transparent p-2 dark:border-white/10 sm:p-3">
+      <FlatInset className="sticky top-0 z-10 flex flex-wrap items-center gap-1 border-0 border-b border-black/10 rounded-none bg-w p-1.5 dark:border-white/10 sm:static sm:gap-2 sm:p-3">
         <div className="flex shrink-0 flex-wrap items-center gap-1">
           <FlatTabButton active={preview === "edit"} onClick={() => setPreview("edit")}>
             {t("edit")}
@@ -510,9 +491,11 @@ export function MarkdownEditor({
           <FlatTabButton active={preview === "preview"} onClick={() => setPreview("preview")}>
             {t("preview")}
           </FlatTabButton>
-          <FlatTabButton active={preview === "comparison"} onClick={() => setPreview("comparison")}>
-            {t("comparison")}
-          </FlatTabButton>
+          {!useNativeEditor && (
+            <FlatTabButton active={preview === "comparison"} onClick={() => setPreview("comparison")}>
+              {t("comparison")}
+            </FlatTabButton>
+          )}
         </div>
         <div className="flex-grow" />
         <div
@@ -539,68 +522,81 @@ export function MarkdownEditor({
         )}
       </FlatInset>
       <div className={`grid grid-cols-1 gap-0 sm:gap-4 ${preview === "comparison" ? "lg:grid-cols-2" : ""}`}>
-        <div className={"flex min-w-0 flex-col " + (preview === "preview" ? "hidden" : "")}>
-          <div
-            className={"relative min-h-0 overflow-hidden rounded-none border-0 bg-w"}
-            onDrop={(e) => {
-              e.preventDefault();
-              const editorInstance = editorRef.current;
-              if (!editorInstance) return;
-              for (let i = 0; i < e.dataTransfer.files.length; i++) {
-                const selection = editorInstance.getSelection();
-                if (!selection) return;
-                const file = e.dataTransfer.files[i];
-                setUploading(true);
-                void insertImage(file, selection, showAlert).finally(() => {
-                  setUploading(false);
-                });
-              }
-            }}
-            onPaste={handlePaste}
-          >
-            <Editor
-              onMount={handleEditorMount}
-              height={height}
-              defaultLanguage="markdown"
-              defaultValue={content}
-              theme={colorMode === "dark" ? "vs-dark" : "light"}
-              options={{
-                wordWrap: "on",
-                fontFamily: "Sarasa Mono SC, JetBrains Mono, monospace",
-                fontLigatures: false,
-                letterSpacing: 0,
-                fontSize: 14,
-                lineNumbers: "off",
-                accessibilitySupport: "off",
-                unicodeHighlight: { ambiguousCharacters: false },
-                renderWhitespace: "none",
-                renderControlCharacters: false,
-                smoothScrolling: false,
-                dragAndDrop: true,
-                pasteAs: { enabled: false },
-                contextmenu: true,
+        {showSource && (
+          <div className="flex min-w-0 flex-col">
+            <div
+              className="relative min-h-0 overflow-visible rounded-none border-0 bg-w"
+              onDragOver={(event) => {
+                event.preventDefault();
               }}
-            />
+              onDrop={(event) => {
+                event.preventDefault();
+                if (event.dataTransfer.files.length > 0) {
+                  uploadFiles(event.dataTransfer.files);
+                }
+              }}
+              onPaste={handlePaste}
+            >
+              {useNativeEditor ? (
+                <textarea
+                  ref={textareaRef}
+                  value={content}
+                  placeholder={placeholder}
+                  spellCheck
+                  autoCapitalize="sentences"
+                  autoCorrect="on"
+                  autoComplete="on"
+                  onChange={(event) => setContent(event.target.value)}
+                  style={{ height }}
+                  className="box-border min-h-[60dvh] w-full resize-y bg-transparent px-3 py-3 text-base leading-7 t-primary outline-none sm:px-4 [overflow-wrap:anywhere] [user-select:text] [-webkit-user-select:text]"
+                />
+              ) : (
+                <Editor
+                  onMount={handleEditorMount}
+                  height={height}
+                  defaultLanguage="markdown"
+                  defaultValue={content}
+                  theme={colorMode === "dark" ? "vs-dark" : "light"}
+                  options={{
+                    wordWrap: "on",
+                    fontFamily: "Sarasa Mono SC, JetBrains Mono, monospace",
+                    fontLigatures: false,
+                    letterSpacing: 0,
+                    fontSize: 14,
+                    lineNumbers: "off",
+                    minimap: { enabled: false },
+                    folding: false,
+                    glyphMargin: false,
+                    accessibilitySupport: "auto",
+                    unicodeHighlight: { ambiguousCharacters: false },
+                    renderWhitespace: "none",
+                    renderControlCharacters: false,
+                    smoothScrolling: false,
+                    dragAndDrop: true,
+                    pasteAs: { enabled: false },
+                    contextmenu: false,
+                    quickSuggestions: false,
+                    suggestOnTriggerCharacters: false,
+                  }}
+                />
+              )}
+            </div>
           </div>
-        </div>
-        <div
-          className={
-            "min-h-0 overflow-y-auto rounded-none border-0 bg-w px-4 py-4 border-t sm:border-none " +
-            (preview === "edit" ? "hidden" : "")
-          }
-          style={{ height: height }}
-        >
-          <Markdown content={content ? content : placeholder} />
-        </div>
+        )}
+        {showPreview && (
+          <div
+            className="rin-preview-root min-h-0 overflow-y-auto rounded-none border-0 border-t bg-w px-3 py-3 sm:border-none sm:px-4 sm:py-4"
+            style={{ height }}
+          >
+            <Markdown content={neutralizePreviewStyles(content || placeholder)} />
+          </div>
+        )}
       </div>
       <AlertUI />
     </div>
   );
 }
 
-
-//选中（或光标落在）Markdown 表后，工具栏按钮把整张表换成这套 HTML。列数、行数、表头都从原表读。
-//选中（或光标落在）Markdown 表后，工具栏按钮把整张表换成这套 HTML。列数、行数、表头都从原表读。
 type Align = "left" | "right" | "center";
 
 function splitMarkdownRow(line: string): string[] {
