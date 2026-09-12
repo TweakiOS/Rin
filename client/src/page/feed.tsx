@@ -20,6 +20,7 @@ import { Button } from "../components/button";
 import { Tips } from "../components/tips";
 import { AdjacentSection } from "../components/adjacent_feed.tsx";
 import { stripImageUrlMetadata } from "../utils/image-upload";
+import { VisibilityBadge } from "../components/visibility_badge";
 
 async function loadMermaid() {
   const module = await import("mermaid");
@@ -185,19 +186,16 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
               >
                 <div className="flex justify-between">
                   <div>
-                    <div className="mb-1 mt-1 flex gap-1">
+                    <div className="mb-1 mt-1 flex items-center gap-1">
                       <p className="text-[12px] text-gray-400" title={new Date(feed.createdAt).toLocaleString()}>
-                        {t("feed_card.published$time", {
-                          time: timeago(feed.createdAt),
-                        })}
+                        {t("feed_card.published$time", { time: timeago(feed.createdAt) })}
                       </p>
                       {feed.createdAt !== feed.updatedAt && (
                         <p className="text-[12px] text-gray-400" title={new Date(feed.updatedAt).toLocaleString()}>
-                          {t("feed_card.updated$time", {
-                            time: timeago(feed.updatedAt),
-                          })}
+                          {t("feed_card.updated$time", { time: timeago(feed.updatedAt) })}
                         </p>
                       )}
+                      <VisibilityBadge draft={(feed as any).draft} listed={(feed as any).listed} />
                     </div>
                     {counterEnabled && (
                       <p className="text-[12px] font-normal text-gray-400 link-line">

@@ -304,6 +304,10 @@ class FeedAPI {
     return this.http.post<{ insertedId: number }>("/api/feed", body);
   }
 
+  async unlock(id: number | string, body: { password: string }) {
+    return this.http.post<Feed>(`/api/feed/${id}/unlock`, body);
+  }
+  
   // POST /api/feed/:id
   async update(id: number, body: UpdateFeedRequest): Promise<ApiResponse<void>> {
     return this.http.post<void>(`/api/feed/${id}`, body);

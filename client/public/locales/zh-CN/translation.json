@@ -167,6 +167,7 @@
   "edit": "编辑",
   "markdown_editor": {
     "draft": {
+      "save": "存为草稿",
       "clear": "清空草稿",
       "clear_confirm": "清空当前本地草稿？未发布的修改会丢失。"
     },
@@ -246,7 +247,8 @@
     },
     "title": "目录"
   },
-  "listed": "列出在文章中",
+  "listed": "列出在文章列表中",
+  "listed_badge": "已列出",
   "load_more": "加载更多",
   "login": {
     "error": {

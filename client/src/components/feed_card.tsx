@@ -8,6 +8,7 @@ import { parseImageUrlMetadata } from "../utils/image-upload";
 import { useImageLoadState } from "../utils/use-image-load-state";
 import { type FeedCardVariant, normalizeFeedCardVariant } from "./feed-card-options";
 import { useSiteConfig } from "../hooks/useSiteConfig";
+import { VisibilityBadge } from "./visibility_badge";
 
 function FeedCardImage({ src, variant }: { src: string; variant: FeedCardVariant }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -119,13 +120,17 @@ export function FeedCard({ id, title, avatar, draft, listed, top, summary, hasht
                 <h1 className={styles.title}>{title}</h1>
                 <p className={`space-x-2 ${styles.meta}`}>
                     <span title={new Date(createdAt).toLocaleString()}>
-                        {createdAt === updatedAt ? timeago(createdAt) : t('feed_card.published$time', { time: timeago(createdAt) })}
+                        {createdAt === updatedAt ? timeago(createdAt) : t("feed_card.published$time", { time: timeago(createdAt) })}
                     </span>
-                    {createdAt !== updatedAt &&
+                    {createdAt !== updatedAt && (
                         <span title={new Date(updatedAt).toLocaleString()}>
-                            {t('feed_card.updated$time', { time: timeago(updatedAt) })}
+                        {t("feed_card.updated$time", { time: timeago(updatedAt) })}
                         </span>
-                    }
+                    )}
+                    <VisibilityBadge draft={draft} listed={listed} />
+                </p>
+                <p className={`space-x-2 ${styles.meta}`}>
+                    {top === 1 && <span className="text-theme">{t("article.top.title")}</span>}
                 </p>
                 <p className={`space-x-2 ${styles.meta} ${activeVariant === "editorial" ? "mt-2" : ""}`}>
                     {draft === 1 && <span>{t("draft")}</span>}

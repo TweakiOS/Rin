@@ -38,6 +38,10 @@ export const feedSetTopSchema = t.Object({
   top: t.Numeric(),
 });
 
+export const feedUnlockSchema = t.Object({
+  password: t.String({ minLength: 1 }),
+});
+
 // ============================================================================
 // Auth Schemas
 // ============================================================================
@@ -93,10 +97,14 @@ export const friendUpdateSchema = t.Object({
 
 export const momentCreateSchema = t.Object({
   content: t.String(),
+  password: t.String({ optional: true }),
+  encrypted: t.Boolean({ optional: true }),
 });
 
 export const momentUpdateSchema = t.Object({
   content: t.String(),
+  password: t.String({ optional: true }),
+  encrypted: t.Boolean({ optional: true }),
 });
 
 // ============================================================================

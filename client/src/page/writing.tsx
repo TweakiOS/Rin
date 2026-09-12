@@ -22,6 +22,8 @@ async function publish({
   summary,
   tags,
   draft,
+  encrypted,
+  password,
   createdAt,
   onCompleted,
   showAlert
@@ -33,6 +35,8 @@ async function publish({
   tags: string[];
   draft: boolean;
   alias?: string;
+  encrypted?: boolean;
+  password?: string;
   createdAt?: Date;
   onCompleted?: () => void;
   showAlert: ShowAlertType;
@@ -47,6 +51,8 @@ async function publish({
       tags,
       listed,
       draft,
+      encrypted,
+      password,
       createdAt: createdAt?.toISOString(),
     }
   );
@@ -73,6 +79,8 @@ async function update({
   tags,
   listed,
   draft,
+  encrypted,
+  password,
   createdAt,
   onCompleted,
   showAlert
@@ -85,6 +93,8 @@ async function update({
   summary?: string;
   tags?: string[];
   draft?: boolean;
+  encrypted?: boolean;
+  password?: string;
   createdAt?: Date;
   onCompleted?: () => void;
   showAlert: ShowAlertType;
@@ -100,6 +110,8 @@ async function update({
       tags,
       listed,
       draft,
+      encrypted,
+      password,
       createdAt: createdAt?.toISOString(),
     }
   );
@@ -118,6 +130,8 @@ async function update({
 
 // 写作页面
 export function WritingPage({ id }: { id?: number }) {
+  const [encrypted, setEncrypted] = useState(false);
+  const [password, setPassword] = useState("");
   const { t } = useTranslation();
   const siteConfig = useSiteConfig();
   const cache = Cache.with(id);
@@ -133,15 +147,16 @@ export function WritingPage({ id }: { id?: number }) {
   const [createdAt, setCreatedAt] = useState<Date | undefined>(new Date());
   const [publishing, setPublishing] = useState(false)
   const { showAlert, AlertUI } = useAlert()
-  function publishButton() {
+  function submitArticle(asDraft: boolean) {
     if (publishing) return;
     const tagsplit =
-      tags
-        .split("#")
-        .filter((tag) => tag !== "")
-        .map((tag) => tag.trim()) || [];
+      tags.split("#").filter((tag) => tag !== "").map((tag) => tag.trim()) || [];
+    const nextDraft = asDraft;
+    const nextListed = asDraft ? false : listed;
+    const [encrypted, setEncrypted] = useState(false);
+    const [password, setPassword] = useState("");
     if (id !== undefined) {
-      setPublishing(true)
+      setPublishing(true);
       update({
         id,
         title,
@@ -149,37 +164,31 @@ export function WritingPage({ id }: { id?: number }) {
         summary,
         alias,
         tags: tagsplit,
-        draft,
-        listed,
+        draft: nextDraft,
+        listed: nextListed,
+        encrypted,
+        password,
         createdAt,
-        onCompleted: () => {
-          setPublishing(false)
-        },
-        showAlert
+        onCompleted: () => setPublishing(false),
+        showAlert,
       });
     } else {
-      if (!title) {
-        showAlert(t("title_empty"))
-        return;
-      }
-      if (!content) {
-        showAlert(t("content.empty"))
-        return;
-      }
-      setPublishing(true)
+      if (!title) { showAlert(t("title_empty")); return; }
+      if (!content) { showAlert(t("content.empty")); return; }
+      setPublishing(true);
       publish({
         title,
         content,
         summary,
         tags: tagsplit,
-        draft,
         alias,
-        listed,
+        draft: nextDraft,
+        listed: nextListed,
+        encrypted,
+        password,
         createdAt,
-        onCompleted: () => {
-          setPublishing(false)
-        },
-        showAlert
+        onCompleted: () => setPublishing(false),
+        showAlert,
       });
     }
   }
@@ -199,7 +208,9 @@ export function WritingPage({ id }: { id?: number }) {
             if (summary == "") setSummary((data as any).summary || "");
             setListed((data as any).listed === 1);
             setDraft((data as any).draft === 1);
+            setEncrypted(Boolean((data as any).encrypted));
             setCreatedAt(new Date(data.createdAt));
+            setEncrypted(Boolean((data as any).encrypted || (data as any).passwordHash));
           }
         });
     }
@@ -270,19 +281,40 @@ export function WritingPage({ id }: { id?: number }) {
     if (!q) return allTags;
     return allTags.filter((t) => t.name.toLowerCase().includes(q));
   }, [allTags, tagQuery]);
-  function PublishButton({ className }: { className?: string }) {
-    return (
-      <button
-        onClick={publishButton}
-        className={`inline-flex items-center justify-center gap-2 rounded-xl bg-theme px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-theme-hover active:bg-theme-active disabled:cursor-not-allowed disabled:opacity-60 ${className ?? ""}`}
-        disabled={publishing}
-      >
-        {publishing && <Loading type="spin" height={16} width={16} />}
-        <span>{t('publish.title')}</span>
-      </button>
-    );
+  function submitArticle(asDraft: boolean) {
+    if (publishing) return;
+    if (encrypted && !password && id === undefined) {
+      showAlert(t("feed.password_required"));
+      return;
+    }
+    const tagsplit = tags.split("#").filter((tag) => tag !== "").map((tag) => tag.trim()) || [];
+    const nextDraft = asDraft;
+    const nextListed = asDraft ? false : listed;
+    const payload = {
+      title,
+      content,
+      summary,
+      alias,
+      tags: tagsplit,
+      draft: nextDraft,
+      listed: nextListed,
+      createdAt,
+      encrypted,
+      password: password || undefined,
+      onCompleted: () => setPublishing(false),
+      showAlert,
+    };
+    if (id !== undefined) {
+      setPublishing(true);
+      update({ id, ...payload });
+    } else {
+      if (!title) { showAlert(t("title_empty")); return; }
+      if (!content) { showAlert(t("content.empty")); return; }
+      setPublishing(true);
+      publish(payload);
+    }
   }
-
+  
   function clearDraft() {
     cache.clear();
     setTitle("");
@@ -322,6 +354,14 @@ export function WritingPage({ id }: { id?: number }) {
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <ClearDraftButton />
+              <button
+                type="button"
+                onClick={() => submitArticle(true)}
+                disabled={publishing}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-black/10 bg-transparent px-5 py-3 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:border-white/10 dark:text-neutral-300 dark:hover:bg-neutral-800 disabled:opacity-60"
+              >
+                {t("markdown_editor.draft.save")}
+              </button>
               <PublishButton className="w-auto" />
             </div>
           </div>

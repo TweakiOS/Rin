@@ -2,6 +2,7 @@ import {
     feedCreateSchema,
     feedSetTopSchema,
     feedUpdateSchema,
+    feedUnlockSchema,
 } from "@rin/api";
 import type { CreateFeedRequest, UpdateFeedRequest } from "@rin/api";
 import { and, asc, count, desc, eq, gt, lt, sql } from "drizzle-orm";
@@ -20,6 +21,14 @@ import {
     updateFeedById,
 } from "../features/feed/repository";
 import { HyperLogLog } from "../utils/hyperloglog";
+import {
+    hashFeedPassword,
+    isProtected,
+    randomSalt,
+    unlockCookieName,
+    unlockCookieValue,
+    verifyFeedPassword,
+} from "../utils/feed-password";
 import { extractImage, extractImageWithMetadata } from "../utils/image";
 import { stripMarkdown } from "../utils/markdown";
 import { syncFeedAISummaryQueueState } from "./feed-ai-summary";
@@ -53,6 +62,35 @@ function parsePositiveInteger(value: string | undefined, fallback: number, maxim
     return maximum ? Math.min(parsed, maximum) : parsed;
 }
 
+async function resolvePasswordFields(
+    encrypted: boolean | undefined,
+    password: string | undefined,
+    prev?: { passwordHash?: string | null; passwordSalt?: string | null },
+) {
+    if (encrypted === false) {
+        return { passwordHash: "", passwordSalt: "" };
+    }
+    if (password) {
+        const salt = randomSalt();
+        return { passwordHash: await hashFeedPassword(password, salt), passwordSalt: salt };
+    }
+    if (encrypted && !prev?.passwordHash) {
+        throw new Error("Password required");
+    }
+    return {
+        passwordHash: prev?.passwordHash ?? "",
+        passwordSalt: prev?.passwordSalt ?? "",
+    };
+}
+
+function stripSecrets(feed: any) {
+    const { passwordHash, passwordSalt, ...rest } = feed;
+    return {
+        ...rest,
+        encrypted: Boolean(passwordHash),
+    };
+}
+
 async function initWPModules() {
     if (!XMLParser) {
         const fxp = await import("fast-xml-parser");
@@ -78,30 +116,33 @@ export function FeedService(): Hono<{
         const db = c.get('db');
         const cache = c.get('cache');
         const admin = c.get('admin');
+        const uid = c.get('uid');
         const page = c.req.query('page');
         const limit = c.req.query('limit');
         const type = c.req.query('type');
-
-        if ((type === 'draft' || type === 'unlisted') && !admin) {
+        
+        if ((type === 'draft' || type === 'unlisted' || type === 'encrypted') && !admin && !uid) {
             return c.text('Permission denied', 403);
         }
-
+        
         const page_num = parsePositiveInteger(page, 1) - 1;
         const limit_num = parsePositiveInteger(limit, 20, 50);
-        const cacheKey = `feeds_${admin ? "admin" : "pub"}_${type}_${page_num}_${limit_num}`;
-        const cached = await profileAsync(c, 'feed_list_cache_get', () => cache.get(cacheKey));
-
-        if (cached) {
-            return c.json(cached);
-        }
-
+        const viewer = admin ? 'admin' : uid ? `user_${uid}` : 'pub';
+        const cacheKey = `feeds_${viewer}_${type}_${page_num}_${limit_num}`;
+        
         const where = type === 'draft'
-            ? eq(feeds.draft, 1)
+            ? (admin ? eq(feeds.draft, 1) : and(eq(feeds.draft, 1), eq(feeds.uid, uid!)))
             : type === 'unlisted'
-                ? and(eq(feeds.draft, 0), eq(feeds.listed, 0))
-                : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+                ? (admin
+                    ? and(eq(feeds.draft, 0), eq(feeds.listed, 0))
+                    : and(eq(feeds.draft, 0), eq(feeds.listed, 0), eq(feeds.uid, uid!)))
+                : type === 'encrypted'
+                    ? (admin
+                        ? sql`${feeds.passwordHash} != ''`
+                        : and(sql`${feeds.passwordHash} != ''`, eq(feeds.uid, uid!)))
+                    : and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ''));
 
-        const size = await profileAsync(c, 'feed_list_count', () => db.select({ count: count() }).from(feeds).where(where));
+                const size = await profileAsync(c, 'feed_list_count', () => db.select({ count: count() }).from(feeds).where(where));
 
         if (size[0].count === 0) {
             return c.json({ size: 0, data: [], hasNext: false });
@@ -109,7 +150,7 @@ export function FeedService(): Hono<{
 
         const feed_list = (await profileAsync(c, 'feed_list_db', () => db.query.feeds.findMany({
             where: where,
-            columns: admin ? undefined : { draft: false, listed: false },
+            columns: (admin || uid) ? undefined : { draft: false, listed: false, passwordHash: false, passwordSalt: false },
             with: {
                 hashtags: {
                     columns: {},
@@ -122,14 +163,19 @@ export function FeedService(): Hono<{
             orderBy: [desc(feeds.top), desc(feeds.createdAt), desc(feeds.updatedAt)],
             offset: page_num * limit_num,
             limit: limit_num + 1,
-        }))).map(({ content, hashtags, summary, ...other }: any) => {
-            const avatar = extractImageWithMetadata(content);
+        }))).map(({ content, hashtags, summary, passwordHash, passwordSalt, ...other }: any) => {
+            const encrypted = Boolean(passwordHash);
+            const canSee = admin || other.uid === uid;
+            const avatar = encrypted && !canSee ? undefined : extractImageWithMetadata(content);
             const plainText = stripMarkdown(content);
             return {
-                summary: summary.length > 0 ? summary : plainText.length > 200 ? plainText.slice(0, 200) : plainText,
+                summary: encrypted && !canSee
+                    ? ""
+                    : summary.length > 0 ? summary : plainText.length > 200 ? plainText.slice(0, 200) : plainText,
                 hashtags: hashtags.map(({ hashtag }: any) => hashtag),
                 avatar,
-                ...other
+                encrypted,
+                ...other,
             };
         });
 
@@ -151,7 +197,7 @@ export function FeedService(): Hono<{
     // GET /feed/timeline
     app.get('/timeline', async (c) => {
         const db = c.get('db');
-        const where = and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+        const where = and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ''));
 
         return c.json(await profileAsync(c, 'feed_timeline_db', () => db.query.feeds.findMany({
             where: where,
@@ -167,7 +213,7 @@ export function FeedService(): Hono<{
         const serverConfig = c.get('serverConfig');
         const env = c.get('env');
         const uid = c.get('uid');
-        const { title, alias, listed, content, summary, draft, tags, createdAt } = body;
+        const { title, alias, listed, content, summary, draft, tags, createdAt, password, encrypted } = body;
 
         const exist = await profileAsync(c, 'feed_create_existing', () => findDuplicateFeed(db, title, content));
 
@@ -181,6 +227,14 @@ export function FeedService(): Hono<{
             return c.text('User ID is required', 400);
         }
 
+        let pwd;
+        try {
+            pwd = await resolvePasswordFields(encrypted, password);
+        } catch {
+            return c.text('Password required', 400);
+        }
+        const listedFlag = draft || (encrypted && listed !== true) ? 0 : (listed ? 1 : 0);
+
         const result = await profileAsync(c, 'feed_create_insert', () => insertFeed(db, {
             title,
             content,
@@ -190,8 +244,10 @@ export function FeedService(): Hono<{
             ai_summary_error: "",
             uid,
             alias,
-            listed: listed ? 1 : 0,
+            listed: listedFlag,
             draft: draft ? 1 : 0,
+            passwordHash: pwd.passwordHash,
+            passwordSalt: pwd.passwordSalt,
             createdAt: date,
             updatedAt: date
         }));
@@ -245,7 +301,7 @@ export function FeedService(): Hono<{
             },
         })));
 
-        if (!feed || feed.draft || !feed.listed) {
+        if (!feed || feed.draft || !feed.listed || (feed as any).passwordHash) {
             return c.json({ found: false });
         }
 
@@ -262,6 +318,23 @@ export function FeedService(): Hono<{
     });
 
     // GET /feed/:id
+    app.post('/:id/unlock', withJsonBody(feedUnlockSchema, async (c, body) => {
+        const db = c.get('db');
+        const id = c.req.param('id');
+        const id_num = parseFeedId(id);
+        const where = id_num === null ? eq(feeds.alias, id) : eq(feeds.id, id_num);
+        const feed = await db.query.feeds.findFirst({ where });
+        if (!feed) return c.text('Not found', 404);
+        if (feed.draft) return c.text('Permission denied', 403);
+        if (!isProtected(feed)) return c.text('Not encrypted', 400);
+        const ok = await verifyFeedPassword(body.password, feed.passwordSalt, feed.passwordHash);
+        if (!ok) return c.text('Wrong password', 403);
+        const token = await unlockCookieValue(feed.id, feed.passwordHash);
+        c.header('Set-Cookie', `${unlockCookieName(feed.id)}=${token}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax`);
+        const { hashtags, passwordHash, passwordSalt, ...other } = feed as any;
+        return c.json(stripSecrets({ ...other, hashtags: [], locked: false }));
+    }));
+
     app.get('/:id', async (c) => {
         const db = c.get('db');
         const cache = c.get('cache');
@@ -295,6 +368,28 @@ export function FeedService(): Hono<{
             return c.text('Permission denied', 403);
         }
 
+        const protectedFeed = isProtected(feed);
+        const isOwner = feed.uid === uid || admin;
+        const expected = protectedFeed ? await unlockCookieValue(feed.id, feed.passwordHash) : "";
+        const cookie = c.req.header("cookie") || "";
+        const unlocked = Boolean(expected) && cookie.includes(`${unlockCookieName(feed.id)}=${expected}`);
+
+        if (protectedFeed && !isOwner && !unlocked) {
+            return c.json({
+                locked: true,
+                encrypted: true,
+                id: feed.id,
+                title: feed.title,
+                createdAt: feed.createdAt,
+                updatedAt: feed.updatedAt,
+                listed: feed.listed,
+                draft: feed.draft,
+                user: feed.user,
+                hashtags: [],
+                content: "",
+                summary: "",
+            }, 403);
+        }
         const { hashtags, ...other } = feed;
         const hashtags_flatten = hashtags.map((f: any) => f.hashtag);
 
@@ -343,7 +438,7 @@ export function FeedService(): Hono<{
             uv = stats ? Math.round(new HyperLogLog(stats.hllData).count()) : 1;
         }
 
-        return c.json({ ...other, hashtags: hashtags_flatten, pv, uv });
+        return c.json(stripSecrets({ ...other, hashtags: hashtags_flatten, pv, uv }));
     });
 
     // GET /feed/adjacent/:id
@@ -400,7 +495,7 @@ export function FeedService(): Hono<{
                 return previousFeedCached;
             } else {
                 const tempPreviousFeed = await profileAsync(c, 'feed_adjacent_prev_db', () => db.query.feeds.findFirst({
-                    where: and(and(eq(feeds.draft, 0), eq(feeds.listed, 1)), lt(feeds.createdAt, created_at)),
+                    where: and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ''), lt(feeds.createdAt, created_at)),
                     orderBy: [desc(feeds.createdAt)],
                     with: {
                         hashtags: {
@@ -420,7 +515,7 @@ export function FeedService(): Hono<{
                 return nextFeedCached;
             } else {
                 const tempNextFeed = await profileAsync(c, 'feed_adjacent_next_db', () => db.query.feeds.findFirst({
-                    where: and(and(eq(feeds.draft, 0), eq(feeds.listed, 1)), gt(feeds.createdAt, created_at)),
+                    where: and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ''), gt(feeds.createdAt, created_at)),
                     orderBy: [asc(feeds.createdAt)],
                     with: {
                         hashtags: {
@@ -447,7 +542,7 @@ export function FeedService(): Hono<{
         const admin = c.get('admin');
         const uid = c.get('uid')!;
         const id = c.req.param('id');
-        const { title, listed, content, summary, alias, draft, top, tags, createdAt } = body;
+        const { title, listed, content, summary, alias, draft, top, tags, createdAt, password, encrypted } = body;
 
         const id_num = parseFeedId(id);
         if (id_num === null) {
@@ -468,6 +563,15 @@ export function FeedService(): Hono<{
         const shouldQueueAISummary = (contentChanged && !isDraft) || (!isDraft && feed.draft === 1 && !feed.ai_summary);
         const updateTime = new Date();
 
+        let pwd;
+        try {
+            pwd = await resolvePasswordFields(encrypted, password, feed);
+        } catch {
+            return c.text('Password required', 400);
+        }
+        const nextDraft = draft === undefined ? feed.draft === 1 : draft;
+        const listedFlag = nextDraft || (encrypted && listed !== true) ? 0 : (listed ? 1 : 0);
+
         await profileAsync(c, 'feed_update_db', () => updateFeedById(db, id_num, {
             title,
             content,
@@ -477,8 +581,10 @@ export function FeedService(): Hono<{
             ai_summary_error: shouldQueueAISummary || isDraft ? "" : undefined,
             alias,
             top,
-            listed: listed ? 1 : 0,
+            listed: listedFlag,
             draft: draft === undefined ? undefined : draft ? 1 : 0,
+            passwordHash: pwd.passwordHash,
+            passwordSalt: pwd.passwordSalt,
             createdAt: createdAt ? new Date(createdAt) : undefined,
             updatedAt: updateTime
         }));

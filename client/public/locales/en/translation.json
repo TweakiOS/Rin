@@ -167,6 +167,7 @@
   "edit": "Edit",
   "markdown_editor": {
     "draft": {
+      "save": "Save as draft",
       "clear": "Clear draft",
       "clear_confirm": "Clear the local draft? Unpublished changes will be lost."
     },
@@ -246,7 +247,8 @@
     },
     "title": "Index"
   },
-  "listed": "Listed in articles",
+  "listed": "List in article feed",
+  "listed_badge": "Listed",
   "load_more": "Load More",
   "login": {
     "error": {
