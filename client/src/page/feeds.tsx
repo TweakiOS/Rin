@@ -87,16 +87,18 @@ export function FeedsPage() {
                             <p className="text-sm mt-4 text-neutral-500 font-normal">
                                 {t('article.total$count', { count: currentFeeds.size })}
                             </p>
-                            {profile?.permission &&
+                            {profile && (
                                 <div className="flex flex-row space-x-4">
-                                    <Link href={listState === 'draft' ? '/?type=normal' : '/?type=draft'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'draft' ? "text-theme" : ""}`}>
-                                        {t('draft_bin')}
+                                    <Link href={listState === "draft" ? "/?type=normal" : "/?type=draft"}
+                                        className={`text-sm mt-4 text-neutral-500 font-normal ${listState === "draft" ? "text-theme" : ""}`}>
+                                        {t("draft_bin")}
                                     </Link>
-                                    <Link href={listState === 'unlisted' ? '/?type=normal' : '/?type=unlisted'} className={`text-sm mt-4 text-neutral-500 font-normal ${listState === 'unlisted' ? "text-theme" : ""}`}>
-                                        {t('unlisted')}
+                                    <Link href={listState === "unlisted" ? "/?type=normal" : "/?type=unlisted"}
+                                        className={`text-sm mt-4 text-neutral-500 font-normal ${listState === "unlisted" ? "text-theme" : ""}`}>
+                                        {t("unlisted")}
                                     </Link>
                                 </div>
-                            }
+                            )}
                         </div>
                     </div>
                     <Waiting for={status === 'idle'}>

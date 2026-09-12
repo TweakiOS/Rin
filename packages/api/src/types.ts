@@ -38,6 +38,10 @@ export interface Feed {
   pv: number;
   uv: number;
   top?: number;
+  listed?: number;
+  draft?: number;
+  locked?: boolean;
+  encrypted?: boolean;
 }
 
 export interface FeedListResponse {
@@ -76,6 +80,8 @@ export interface CreateFeedRequest {
   listed: boolean;
   createdAt?: string;
   tags: string[];
+  password?: string;
+  encrypted?: boolean;
 }
 
 export interface UpdateFeedRequest {
@@ -88,6 +94,12 @@ export interface UpdateFeedRequest {
   createdAt?: string;
   tags?: string[];
   top?: number;
+  password?: string;
+  encrypted?: boolean;
+}
+
+export interface UnlockFeedRequest {
+  password: string;
 }
 
 export interface AdjacentFeed {
@@ -316,7 +328,8 @@ export const API_PATHS = {
   FEED_DELETE: (id: number) => `/api/feed/${id}`,
   FEED_ADJACENT: (id: number | string) => `/api/feed/adjacent/${id}`,
   FEED_SET_TOP: (id: number) => `/api/feed/top/${id}`,
-
+  FEED_UNLOCK: (id: number | string) => `/api/feed/${id}/unlock`,
+  
   // Auth
   AUTH_STATUS: '/api/auth/status',
   AUTH_LOGIN: '/api/auth/login',
