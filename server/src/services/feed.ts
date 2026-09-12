@@ -495,53 +495,54 @@ export function FeedService(): Hono<{
     app.get("/adjacent/:id", async (c) => {
         const db = c.get("db");
         const cache = c.get("cache");
+        const admin = c.get("admin");
+        const uid = c.get("uid");
         const id = c.req.param("id");
         let id_num = parseFeedId(id);
         if (id_num === null) {
             const aliasRecord = await profileAsync(c, "feed_adjacent_alias_lookup", () =>
                 db.select({ id: feeds.id }).from(feeds).where(eq(feeds.alias, id)),
             );
-            if (aliasRecord.length === 0) {
-                return c.text("Not found", 404);
-            }
+            if (aliasRecord.length === 0) return c.text("Not found", 404);
             id_num = aliasRecord[0].id;
         }
-
         const feed = await profileAsync(c, "feed_adjacent_current", () =>
-            db.query.feeds.findFirst({
-                where: eq(feeds.id, id_num),
-                columns: { createdAt: true },
-            }),
+            db.query.feeds.findFirst({ where: eq(feeds.id, id_num), columns: { createdAt: true } }),
         );
-        if (!feed) {
-            return c.text("Not found", 404);
-        }
+        if (!feed) return c.text("Not found", 404);
         const created_at = feed.createdAt;
+        const viewer = admin ? "admin" : uid ? `user_${uid}` : "pub";
 
-        const formatAndCacheData = (row: any, feedDirection: "previous_feed" | "next_feed") => {
+        // 管理员：全部文章
+        // 作者：只在自己的全部文章间跳（含草稿/未列出/加密）
+        // 游客：仅公开已列出且未加密
+        const scope = admin
+            ? undefined
+            : uid
+              ? eq(feeds.uid, uid)
+              : and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ""));
+
+        const withTime = (cmp: ReturnType<typeof lt> | ReturnType<typeof gt>) =>
+            scope ? and(scope, cmp) : cmp;
+
+        function formatAndCacheData(row: any, feedDirection: "previous_feed" | "next_feed") {
             if (!row) return null;
             const hashtags_flatten = row.hashtags.map((f: any) => f.hashtag);
             const plainText = stripMarkdown(row.content);
             const summary = row.summary.length > 0 ? row.summary : plainText.length > 50 ? plainText.slice(0, 50) : plainText;
-            const cacheKey = `adjacent_${feedDirection === "previous_feed" ? "prev" : "next"}_${id_num}`;
-            const cacheData = {
-                id: row.id,
-                title: row.title,
-                summary,
-                hashtags: hashtags_flatten,
-                createdAt: row.createdAt,
-                updatedAt: row.updatedAt,
-            };
+            const cacheKey = `adjacent_${feedDirection === "previous_feed" ? "prev" : "next"}_${viewer}_${id_num}`;
+            const cacheData = { id: row.id, title: row.title, summary, hashtags: hashtags_flatten, createdAt: row.createdAt, updatedAt: row.updatedAt };
             cache.set(cacheKey, cacheData);
             return cacheData;
-        };
+        }
 
         const getPreviousFeed = async () => {
-            const cachedPrev = await profileAsync(c, "feed_adjacent_prev_cache", () => cache.get(`adjacent_prev_${id_num}`));
+            const cacheKey = `adjacent_prev_${viewer}_${id_num}`;
+            const cachedPrev = await profileAsync(c, "feed_adjacent_prev_cache", () => cache.get(cacheKey));
             if (cachedPrev) return cachedPrev;
             const temp = await profileAsync(c, "feed_adjacent_prev_db", () =>
                 db.query.feeds.findFirst({
-                    where: and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ""), lt(feeds.createdAt, created_at)),
+                    where: withTime(lt(feeds.createdAt, created_at)),
                     orderBy: [desc(feeds.createdAt)],
                     with: {
                         hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
@@ -553,11 +554,12 @@ export function FeedService(): Hono<{
         };
 
         const getNextFeed = async () => {
-            const cachedNext = await profileAsync(c, "feed_adjacent_next_cache", () => cache.get(`adjacent_next_${id_num}`));
+            const cacheKey = `adjacent_next_${viewer}_${id_num}`;
+            const cachedNext = await profileAsync(c, "feed_adjacent_next_cache", () => cache.get(cacheKey));
             if (cachedNext) return cachedNext;
             const temp = await profileAsync(c, "feed_adjacent_next_db", () =>
                 db.query.feeds.findFirst({
-                    where: and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ""), gt(feeds.createdAt, created_at)),
+                    where: withTime(gt(feeds.createdAt, created_at)),
                     orderBy: [asc(feeds.createdAt)],
                     with: {
                         hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
