@@ -97,7 +97,7 @@ export function WritingPage({ id }: { id?: number }) {
 
   function submitArticle(asDraft: boolean) {
     if (publishing) return;
-    if (encrypted && !password && id === undefined) {
+    if (encrypted && !password.trim() && id === undefined) {
       showAlert(t("feed.password_required"));
       return;
     }
@@ -112,7 +112,7 @@ export function WritingPage({ id }: { id?: number }) {
       listed: asDraft ? false : listed,
       createdAt,
       encrypted,
-      password: password || undefined,
+      password: password.trim() ? password : undefined,
       onCompleted: () => setPublishing(false),
       showAlert,
     };
@@ -121,8 +121,14 @@ export function WritingPage({ id }: { id?: number }) {
       update({ id, ...payload });
       return;
     }
-    if (!title) { showAlert(t("title_empty")); return; }
-    if (!content) { showAlert(t("content.empty")); return; }
+    if (!title) {
+      showAlert(t("title_empty"));
+      return;
+    }
+    if (!content) {
+      showAlert(t("content.empty"));
+      return;
+    }
     setPublishing(true);
     publish(payload);
   }
@@ -163,18 +169,22 @@ export function WritingPage({ id }: { id?: number }) {
     }, 100),
     [],
   );
-  useEffect(() => { debouncedUpdate(); }, [content, debouncedUpdate]);
+  useEffect(() => {
+    debouncedUpdate();
+  }, [content, debouncedUpdate]);
 
   const selectedTagNames = useMemo(
     () => tags.split("#").map((item) => item.trim()).filter(Boolean),
     [tags],
   );
+
   function toggleTag(name: string) {
     const set = new Set(selectedTagNames);
     if (set.has(name)) set.delete(name);
     else set.add(name);
     setTags([...set].map((n) => `#${n}`).join(" "));
   }
+
   const filteredTags = useMemo(() => {
     const q = tagQuery.trim().toLowerCase();
     if (!q) return allTags;
@@ -271,7 +281,11 @@ export function WritingPage({ id }: { id?: number }) {
                     key={tag.id}
                     type="button"
                     onClick={() => toggleTag(tag.name)}
-                    className={`rounded-full px-3 py-1 text-sm ${selectedTagNames.includes(tag.name) ? "bg-theme text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"}`}
+                    className={`rounded-full px-3 py-1 text-sm ${
+                      selectedTagNames.includes(tag.name)
+                        ? "bg-theme text-white"
+                        : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                    }`}
                   >
                     #{tag.name}
                   </button>
@@ -290,22 +304,10 @@ export function WritingPage({ id }: { id?: number }) {
             </FlatMetaRow>
             <FlatMetaRow
               className="cursor-pointer rounded-none border-0 bg-transparent px-0 py-2 sm:rounded-2xl sm:border sm:bg-secondary sm:px-4 sm:py-3"
-              onClick={() => {
-                const next = !encrypted;
-                setEncrypted(next);
-                if (next) setListed(false);
-              }}
+              onClick={() => setEncrypted(!encrypted)}
             >
               <p>{t("encrypted")}</p>
-              <Checkbox
-                id="encrypted"
-                value={encrypted}
-                setValue={(v) => {
-                  setEncrypted(v);
-                  if (v) setListed(false);
-                }}
-                placeholder={t("encrypted")}
-              />
+              <Checkbox id="encrypted" value={encrypted} setValue={setEncrypted} placeholder={t("encrypted")} />
             </FlatMetaRow>
             <FlatMetaRow className="gap-3 rounded-none border-0 bg-transparent px-0 py-2 sm:rounded-2xl sm:border sm:bg-secondary sm:px-4 sm:py-3">
               <p className="mr-2 whitespace-nowrap">{t("created_at")}</p>
@@ -315,6 +317,7 @@ export function WritingPage({ id }: { id?: number }) {
           {encrypted && (
             <input
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={id ? t("feed.password_keep") : t("feed.password")}

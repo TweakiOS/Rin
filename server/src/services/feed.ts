@@ -132,7 +132,7 @@ export function FeedService(): Hono<{
             return c.json(cached);
         }
 
-        const publicListed = and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ""));
+        const publicListed = and(eq(feeds.draft, 0), eq(feeds.listed, 1));
         const ownAll = uid ? eq(feeds.uid, uid) : undefined;
 
         const where =
@@ -190,15 +190,13 @@ export function FeedService(): Hono<{
             return {
                 summary:
                     encrypted && !canSee
-                        ? ""
+                        ? c.text("feed.encrypted_summary")
                         : summary.length > 0
-                          ? summary
-                          : plainText.length > 200
-                            ? plainText.slice(0, 200)
-                            : plainText,
-                hashtags: hashtags.map(({ hashtag }: any) => hashtag),
-                avatar: encrypted && !canSee ? undefined : extractImageWithMetadata(content),
-                encrypted,
+                            ? summary
+                            : plainText.length > 200
+                                ? plainText.slice(0, 200)
+                                : plainText,
+                encrypted,   // 必须留给前端
                 ...other,
             };
         });
@@ -218,7 +216,7 @@ export function FeedService(): Hono<{
 
     app.get("/timeline", async (c) => {
         const db = c.get("db");
-        const where = and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ""));
+        const where = and(eq(feeds.draft, 0), eq(feeds.listed, 1));
         return c.json(
             await profileAsync(c, "feed_timeline_db", () =>
                 db.query.feeds.findMany({
@@ -445,7 +443,7 @@ export function FeedService(): Hono<{
                     user: feed.user,
                     hashtags: [],
                     content: "",
-                    summary: "",
+                    summary: c.text("feed.encrypted_summary"),
                     pv: 0,
                     uv: 0,
                 },
@@ -515,12 +513,12 @@ export function FeedService(): Hono<{
 
         // 管理员：全部文章
         // 作者：只在自己的全部文章间跳（含草稿/未列出/加密）
-        // 游客：仅公开已列出且未加密
+        // 游客：仅公开已列出
         const scope = admin
             ? undefined
             : uid
               ? eq(feeds.uid, uid)
-              : and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ""));
+              : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
 
         const withTime = (cmp: ReturnType<typeof lt> | ReturnType<typeof gt>) =>
             scope ? and(scope, cmp) : cmp;

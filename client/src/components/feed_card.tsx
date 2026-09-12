@@ -138,7 +138,11 @@ export function FeedCard({
                 <p className={`space-x-2 ${styles.meta} ${activeVariant === "editorial" ? "mt-2" : ""}`}>
                     {draft === 1 && <span>{t("draft")}</span>}
                     {listed === 0 && <span>{t("unlisted")}</span>}
-                    {top === 1 && <span className="text-theme">{t('article.top.title')}</span>}
+                    {encrypted && <span>{t("encrypted")}</span>}
+                    {top === 1 && <span className="text-theme">{t("article.top.title")}</span>}
+                </p>
+                <p className={styles.summary}>
+                    {encrypted && !summary ? t("feed.encrypted_summary") : summary}
                 </p>
                 <p className={`whitespace-pre-line break-words [overflow-wrap:anywhere] ${styles.summary} ${activeVariant === "editorial" ? "mt-4" : ""}`}>{summary}</p>
                 {safeHashtags.length > 0 &&
