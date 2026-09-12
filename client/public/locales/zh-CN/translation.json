@@ -249,6 +249,13 @@
   },
   "listed": "列出在文章列表中",
   "listed_badge": "已列出",
+  "encrypted": "加密",
+  "feed.password": "访问密码",
+  "feed.password_keep": "留空表示不修改密码",
+  "feed.password_hint": "输入密码后查看正文",
+  "feed.password_wrong": "密码错误",
+  "feed.password_required": "加密文章必须设置密码",
+  "feed.unlock": "解锁",
   "load_more": "加载更多",
   "login": {
     "error": {

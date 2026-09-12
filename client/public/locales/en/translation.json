@@ -249,6 +249,13 @@
   },
   "listed": "List in article feed",
   "listed_badge": "Listed",
+  "encrypted": "Encrypted",
+  "feed.password": "Password",
+  "feed.password_keep": "Leave empty to keep current password",
+  "feed.password_hint": "Enter password to view content",
+  "feed.password_wrong": "Incorrect password",
+  "feed.password_required": "Encrypted articles must have a password",
+  "feed.unlock": "Unlock",
   "load_more": "Load More",
   "login": {
     "error": {

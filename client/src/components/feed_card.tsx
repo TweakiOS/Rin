@@ -97,13 +97,16 @@ export type FeedCardProps = {
     title: string;
     summary: string;
     hashtags?: { id: number, name: string }[];
+    encrypted?: boolean;
     createdAt: Date;
     updatedAt: Date;
     preview?: boolean;
     variant?: FeedCardVariant;
 };
 
-export function FeedCard({ id, title, avatar, draft, listed, top, summary, hashtags, createdAt, updatedAt, preview = false, variant }: FeedCardProps) {
+export function FeedCard({
+    id, title, avatar, draft, listed, encrypted, top, summary, hashtags, createdAt, updatedAt, preview = false, variant
+  }: FeedCardProps & { encrypted?: boolean }) {
     const { t } = useTranslation();
     const siteConfig = useSiteConfig();
     const safeHashtags = Array.isArray(hashtags) ? hashtags : [];
@@ -127,7 +130,7 @@ export function FeedCard({ id, title, avatar, draft, listed, top, summary, hasht
                         {t("feed_card.updated$time", { time: timeago(updatedAt) })}
                         </span>
                     )}
-                    <VisibilityBadge draft={draft} listed={listed} />
+                    <VisibilityBadge draft={draft} listed={listed} encrypted={encrypted} />
                 </p>
                 <p className={`space-x-2 ${styles.meta}`}>
                     {top === 1 && <span className="text-theme">{t("article.top.title")}</span>}
