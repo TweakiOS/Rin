@@ -5,7 +5,7 @@ import {
     feedUnlockSchema,
 } from "@rin/api";
 import type { CreateFeedRequest, UpdateFeedRequest } from "@rin/api";
-import { and, asc, count, desc, eq, gt, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, lt, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Variables } from "../core/hono-types";
 import { adminOnly, userOnly, withJsonBody } from "../core/route-boundaries";
@@ -36,40 +36,27 @@ import { bindTagToPost } from "./tag";
 import { clearFeedCache, clearFeedCollectionCaches } from "./clear-feed-cache";
 export { clearFeedCache } from "./clear-feed-cache";
 
+let XMLParser: any;
+let html2md: any;
+
 function parseFeedId(value: string): number | null {
-    if (!/^[1-9]\d*$/.test(value)) return null;
+    if (!/^[1-9]\d*$/.test(value)) {
+        return null;
+    }
     const id = Number(value);
     return Number.isSafeInteger(id) ? id : null;
 }
 
 function parsePositiveInteger(value: string | undefined, fallback: number, maximum?: number) {
-    if (!value) return fallback;
+    if (!value) {
+        return fallback;
+    }
     const parsed = Number.parseInt(value, 10);
-    if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        return fallback;
+    }
     return maximum ? Math.min(parsed, maximum) : parsed;
 }
-
-async function resolvePasswordFields(
-    encrypted: boolean | undefined,
-    password: string | undefined,
-    prev?: { passwordHash?: string | null; passwordSalt?: string | null },
-) {
-    if (encrypted === false) return { passwordHash: "", passwordSalt: "" };
-    if (password) {
-        const salt = randomSalt();
-        return { passwordHash: await hashFeedPassword(password, salt), passwordSalt: salt };
-    }
-    if (encrypted && !prev?.passwordHash) throw new Error("Password required");
-    return { passwordHash: prev?.passwordHash ?? "", passwordSalt: prev?.passwordSalt ?? "" };
-}
-
-function stripSecrets(feed: any) {
-    const { passwordHash, passwordSalt, ...rest } = feed;
-    return { ...rest, encrypted: Boolean(passwordHash) };
-}
-
-let XMLParser: any;
-let html2md: any;
 
 async function initWPModules() {
     if (!XMLParser) {
@@ -82,17 +69,55 @@ async function initWPModules() {
     }
 }
 
-export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
-    const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+async function resolvePasswordFields(
+    encrypted: boolean | undefined,
+    password: string | undefined,
+    prev?: { passwordHash?: string | null; passwordSalt?: string | null },
+) {
+    if (encrypted === false) {
+        return { passwordHash: "", passwordSalt: "" };
+    }
+    if (password) {
+        const salt = randomSalt();
+        return {
+            passwordHash: await hashFeedPassword(password, salt),
+            passwordSalt: salt,
+        };
+    }
+    if (encrypted && !prev?.passwordHash) {
+        throw new Error("Password required");
+    }
+    return {
+        passwordHash: prev?.passwordHash ?? "",
+        passwordSalt: prev?.passwordSalt ?? "",
+    };
+}
+
+function stripSecrets(feed: any) {
+    const { passwordHash, passwordSalt, ...rest } = feed;
+    return {
+        ...rest,
+        encrypted: Boolean(passwordHash),
+    };
+}
+
+export function FeedService(): Hono<{
+    Bindings: Env;
+    Variables: Variables;
+}> {
+    const app = new Hono<{
+        Bindings: Env;
+        Variables: Variables;
+    }>();
 
     app.get("/", async (c) => {
         const db = c.get("db");
         const cache = c.get("cache");
         const admin = c.get("admin");
         const uid = c.get("uid");
-        const type = c.req.query("type");
         const page = c.req.query("page");
         const limit = c.req.query("limit");
+        const type = c.req.query("type");
 
         if ((type === "draft" || type === "unlisted" || type === "encrypted") && !admin && !uid) {
             return c.text("Permission denied", 403);
@@ -103,35 +128,54 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
         const viewer = admin ? "admin" : uid ? `user_${uid}` : "pub";
         const cacheKey = `feeds_${viewer}_${type}_${page_num}_${limit_num}`;
         const cached = await profileAsync(c, "feed_list_cache_get", () => cache.get(cacheKey));
-        if (cached) return c.json(cached);
+        if (cached) {
+            return c.json(cached);
+        }
+
+        const publicListed = and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ""));
+        const ownAll = uid ? eq(feeds.uid, uid) : undefined;
 
         const where =
             type === "draft"
                 ? admin
                     ? eq(feeds.draft, 1)
-                    : and(eq(feeds.draft, 1), eq(feeds.uid, uid!))
+                    : and(eq(feeds.draft, 1), ownAll!)
                 : type === "unlisted"
                   ? admin
                       ? and(eq(feeds.draft, 0), eq(feeds.listed, 0))
-                      : and(eq(feeds.draft, 0), eq(feeds.listed, 0), eq(feeds.uid, uid!))
+                      : and(eq(feeds.draft, 0), eq(feeds.listed, 0), ownAll!)
                   : type === "encrypted"
                     ? admin
                         ? sql`${feeds.passwordHash} != ''`
-                        : and(sql`${feeds.passwordHash} != ""`, eq(feeds.uid, uid!))
-                    : and(eq(feeds.draft, 0), eq(feeds.listed, 1), eq(feeds.passwordHash, ""));
+                        : and(sql`${feeds.passwordHash} != ''`, ownAll!)
+                    : admin
+                      ? undefined
+                      : uid
+                        ? or(publicListed, ownAll!)
+                        : publicListed;
 
         const size = await profileAsync(c, "feed_list_count", () =>
-            db.select({ count: count() }).from(feeds).where(where),
+            where
+                ? db.select({ count: count() }).from(feeds).where(where)
+                : db.select({ count: count() }).from(feeds),
         );
-        if (size[0].count === 0) return c.json({ size: 0, data: [], hasNext: false });
+
+        if (size[0].count === 0) {
+            return c.json({ size: 0, data: [], hasNext: false });
+        }
 
         const feed_list = (
             await profileAsync(c, "feed_list_db", () =>
                 db.query.feeds.findMany({
-                    where,
+                    ...(where ? { where } : {}),
                     columns: admin || uid ? undefined : { draft: false, listed: false, passwordHash: false, passwordSalt: false },
                     with: {
-                        hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
+                        hashtags: {
+                            columns: {},
+                            with: {
+                                hashtag: { columns: { id: true, name: true } },
+                            },
+                        },
                         user: { columns: { id: true, username: true, avatar: true } },
                     },
                     orderBy: [desc(feeds.top), desc(feeds.createdAt), desc(feeds.updatedAt)],
@@ -164,6 +208,7 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
             feed_list.pop();
             hasNext = true;
         }
+
         const data = { size: size[0].count, data: feed_list, hasNext };
         if (type === undefined || type === "normal" || type === "") {
             await profileAsync(c, "feed_list_cache_set", () => cache.set(cacheKey, data));
@@ -188,60 +233,82 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
     app.post(
         "/",
         adminOnly(
-            withJsonBody<CreateFeedRequest>(feedCreateSchema, async (c, body) => {
-                const db = c.get("db");
-                const cache = c.get("cache");
-                const serverConfig = c.get("serverConfig");
-                const env = c.get("env");
-                const uid = c.get("uid");
-                const { title, alias, listed, content, summary, draft, tags, createdAt, password, encrypted } = body as any;
-                const exist = await profileAsync(c, "feed_create_existing", () => findDuplicateFeed(db, title, content));
-                if (exist) return c.text("Content already exists", 400);
-                if (!uid) return c.text("User ID is required", 400);
-                let pwd;
-                try {
-                    pwd = await resolvePasswordFields(encrypted, password);
-                } catch {
-                    return c.text("Password required", 400);
-                }
-                const date = createdAt ? new Date(createdAt) : new Date();
-                const listedFlag = draft || (encrypted && listed !== true) ? 0 : listed ? 1 : 0;
-                const result = await profileAsync(c, "feed_create_insert", () =>
-                    insertFeed(db, {
-                        title,
-                        content,
-                        summary,
-                        ai_summary: "",
-                        ai_summary_status: "idle",
-                        ai_summary_error: "",
-                        uid,
-                        alias,
-                        listed: listedFlag,
-                        draft: draft ? 1 : 0,
-                        passwordHash: pwd.passwordHash,
-                        passwordSalt: pwd.passwordSalt,
-                        createdAt: date,
-                        updatedAt: date,
-                    }),
-                );
-                if (!result) return c.text("Failed to insert", 500);
-                await profileAsync(c, "feed_create_tags", () => bindTagToPost(db, result.insertedId, tags));
-                await profileAsync(c, "feed_create_ai_queue", () =>
-                    syncFeedAISummaryQueueState(db, serverConfig, env, result.insertedId, {
-                        draft: Boolean(draft),
-                        updatedAt: date,
-                        resetSummary: true,
-                    }),
-                );
-                await profileAsync(c, "feed_create_cache_invalidate", () => clearFeedCollectionCaches(cache));
-                return c.json(result);
-            }, {
-                errorMessage: (issues) => {
-                    if (issues.some((issue) => issue.path === "title" && /required|empty/.test(issue.message))) return "Title is required";
-                    if (issues.some((issue) => issue.path === "content" && /required|empty/.test(issue.message))) return "Content is required";
-                    return issues[0]?.message ?? "Invalid request body";
+            withJsonBody<CreateFeedRequest>(
+                feedCreateSchema,
+                async (c, body) => {
+                    const db = c.get("db");
+                    const cache = c.get("cache");
+                    const serverConfig = c.get("serverConfig");
+                    const env = c.get("env");
+                    const uid = c.get("uid");
+                    const { title, alias, listed, content, summary, draft, tags, createdAt, password, encrypted } = body as CreateFeedRequest & {
+                        password?: string;
+                        encrypted?: boolean;
+                    };
+
+                    const exist = await profileAsync(c, "feed_create_existing", () => findDuplicateFeed(db, title, content));
+                    if (exist) {
+                        return c.text("Content already exists", 400);
+                    }
+                    if (!uid) {
+                        return c.text("User ID is required", 400);
+                    }
+
+                    let pwd;
+                    try {
+                        pwd = await resolvePasswordFields(encrypted, password);
+                    } catch {
+                        return c.text("Password required", 400);
+                    }
+
+                    const date = createdAt ? new Date(createdAt) : new Date();
+                    const listedFlag = draft || (encrypted && listed !== true) ? 0 : listed ? 1 : 0;
+
+                    const result = await profileAsync(c, "feed_create_insert", () =>
+                        insertFeed(db, {
+                            title,
+                            content,
+                            summary,
+                            ai_summary: "",
+                            ai_summary_status: "idle",
+                            ai_summary_error: "",
+                            uid,
+                            alias,
+                            listed: listedFlag,
+                            draft: draft ? 1 : 0,
+                            passwordHash: pwd.passwordHash,
+                            passwordSalt: pwd.passwordSalt,
+                            createdAt: date,
+                            updatedAt: date,
+                        } as any),
+                    );
+                    if (!result) {
+                        return c.text("Failed to insert", 500);
+                    }
+
+                    await profileAsync(c, "feed_create_tags", () => bindTagToPost(db, result.insertedId, tags));
+                    await profileAsync(c, "feed_create_ai_queue", () =>
+                        syncFeedAISummaryQueueState(db, serverConfig, env, result.insertedId, {
+                            draft: Boolean(draft),
+                            updatedAt: date,
+                            resetSummary: true,
+                        }),
+                    );
+                    await profileAsync(c, "feed_create_cache_invalidate", () => clearFeedCollectionCaches(cache));
+                    return c.json(result);
                 },
-            }),
+                {
+                    errorMessage: (issues) => {
+                        if (issues.some((issue) => issue.path === "title" && /required|empty/.test(issue.message))) {
+                            return "Title is required";
+                        }
+                        if (issues.some((issue) => issue.path === "content" && /required|empty/.test(issue.message))) {
+                            return "Content is required";
+                        }
+                        return issues[0]?.message ?? "Invalid request body";
+                    },
+                },
+            ),
             { message: "Permission denied", status: 403 },
         ),
     );
@@ -253,15 +320,29 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
         const id_num = parseFeedId(id);
         const cacheKey = id_num === null ? `feed_seo_alias_${id}` : `feed_seo_id_${id_num}`;
         const where = id_num === null ? eq(feeds.alias, id) : eq(feeds.id, id_num);
+
         const feed = await profileAsync(c, "feed_seo_cache_db", () =>
             cache.getOrSet(cacheKey, () =>
                 db.query.feeds.findFirst({
                     where,
-                    columns: { id: true, alias: true, title: true, summary: true, content: true, draft: true, listed: true, passwordHash: true },
+                    columns: {
+                        id: true,
+                        alias: true,
+                        title: true,
+                        summary: true,
+                        content: true,
+                        draft: true,
+                        listed: true,
+                        passwordHash: true,
+                    },
                 }),
             ),
         );
-        if (!feed || feed.draft || !feed.listed || feed.passwordHash) return c.json({ found: false });
+
+        if (!feed || feed.draft || !feed.listed || feed.passwordHash) {
+            return c.json({ found: false });
+        }
+
         const plainText = feed.summary.length > 0 ? feed.summary : stripMarkdown(feed.content);
         return c.json({
             found: true,
@@ -273,35 +354,43 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
         });
     });
 
-    app.post("/:id/unlock", withJsonBody<{ password: string }>(feedUnlockSchema, async (c, body) => {
-        const password = body.password;
-        const db = c.get("db");
-        const id = c.req.param("id");
-        const id_num = parseFeedId(id);
-        const where = id_num === null ? eq(feeds.alias, id) : eq(feeds.id, id_num);
-        const feed = await db.query.feeds.findFirst({
-            where,
-            with: {
-                hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
-                user: { columns: { id: true, username: true, avatar: true } },
-            },
-        });
-        if (!feed) return c.text("Not found", 404);
-        if (feed.draft) return c.text("Permission denied", 403);
-        if (!isProtected(feed)) return c.text("Not encrypted", 400);
-        const ok = await verifyFeedPassword(body.password, feed.passwordSalt, feed.passwordHash);
-        if (!ok) return c.text("Wrong password", 403);
-        const token = await unlockCookieValue(feed.id, feed.passwordHash);
-        c.header("Set-Cookie", `${unlockCookieName(feed.id)}=${token}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax`);
-        const { hashtags, passwordHash, passwordSalt, ...other } = feed as any;
-        return c.json(stripSecrets({
-            ...other,
-            hashtags: hashtags.map((f: any) => f.hashtag),
-            locked: false,
-            pv: 0,
-            uv: 0,
-        }));
-    }));
+    app.post(
+        "/:id/unlock",
+        withJsonBody<{ password: string }>(feedUnlockSchema as any, async (c, body) => {
+            const db = c.get("db");
+            const id = c.req.param("id");
+            const id_num = parseFeedId(id);
+            const where = id_num === null ? eq(feeds.alias, id) : eq(feeds.id, id_num);
+            const feed = await db.query.feeds.findFirst({
+                where,
+                with: {
+                    hashtags: {
+                        columns: {},
+                        with: { hashtag: { columns: { id: true, name: true } } },
+                    },
+                    user: { columns: { id: true, username: true, avatar: true } },
+                },
+            });
+            if (!feed) return c.text("Not found", 404);
+            if (feed.draft) return c.text("Permission denied", 403);
+            if (!isProtected(feed)) return c.text("Not encrypted", 400);
+            const password = (body as { password: string }).password;
+            const ok = await verifyFeedPassword(password, feed.passwordSalt, feed.passwordHash);
+            if (!ok) return c.text("Wrong password", 403);
+            const token = await unlockCookieValue(feed.id, feed.passwordHash);
+            c.header("Set-Cookie", `${unlockCookieName(feed.id)}=${token}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax`);
+            const { hashtags, ...other } = feed as any;
+            return c.json(
+                stripSecrets({
+                    ...other,
+                    hashtags: hashtags.map((f: any) => f.hashtag),
+                    locked: false,
+                    pv: 0,
+                    uv: 0,
+                }),
+            );
+        }),
+    );
 
     app.get("/:id", async (c) => {
         const db = c.get("db");
@@ -314,19 +403,28 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
         const id_num = parseFeedId(id);
         const cacheKey = id_num === null ? `feed_alias_${id}` : `feed_id_${id_num}`;
         const where = id_num === null ? eq(feeds.alias, id) : eq(feeds.id, id_num);
+
         const feed = await profileAsync(c, "feed_detail_cache_db", () =>
             cache.getOrSet(cacheKey, () =>
                 db.query.feeds.findFirst({
                     where,
                     with: {
-                        hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
+                        hashtags: {
+                            columns: {},
+                            with: { hashtag: { columns: { id: true, name: true } } },
+                        },
                         user: { columns: { id: true, username: true, avatar: true } },
                     },
                 }),
             ),
         );
-        if (!feed) return c.text("Not found", 404);
-        if (feed.draft && feed.uid !== uid && !admin) return c.text("Permission denied", 403);
+
+        if (!feed) {
+            return c.text("Not found", 404);
+        }
+        if (feed.draft && feed.uid !== uid && !admin) {
+            return c.text("Permission denied", 403);
+        }
 
         const protectedFeed = isProtected(feed);
         const isOwner = feed.uid === uid || admin;
@@ -334,33 +432,40 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
         const cookie = c.req.header("cookie") || "";
         const unlocked = Boolean(expected) && cookie.includes(`${unlockCookieName(feed.id)}=${expected}`);
         if (protectedFeed && !isOwner && !unlocked) {
-            return c.json({
-                locked: true,
-                encrypted: true,
-                id: feed.id,
-                title: feed.title,
-                createdAt: feed.createdAt,
-                updatedAt: feed.updatedAt,
-                listed: feed.listed,
-                draft: feed.draft,
-                user: feed.user,
-                hashtags: [],
-                content: "",
-                summary: "",
-                pv: 0,
-                uv: 0,
-            }, 403);
+            return c.json(
+                {
+                    locked: true,
+                    encrypted: true,
+                    id: feed.id,
+                    title: feed.title,
+                    createdAt: feed.createdAt,
+                    updatedAt: feed.updatedAt,
+                    listed: feed.listed,
+                    draft: feed.draft,
+                    user: feed.user,
+                    hashtags: [],
+                    content: "",
+                    summary: "",
+                    pv: 0,
+                    uv: 0,
+                },
+                403,
+            );
         }
 
         const { hashtags, ...other } = feed;
         const hashtags_flatten = hashtags.map((f: any) => f.hashtag);
-        const enableVisit = await profileAsync(c, "feed_detail_counter_flag", () => clientConfig.getOrDefault("counter.enabled", true));
+        const enableVisit = await profileAsync(c, "feed_detail_counter_flag", () =>
+            clientConfig.getOrDefault("counter.enabled", true),
+        );
         let pv = 0;
         let uv = 0;
+
         if (enableVisit) {
             const ip = c.req.header("cf-connecting-ip") || c.req.header("x-real-ip") || "UNK";
             await profileAsync(c, "feed_detail_pv_incr", () =>
-                db.insert(visitStats)
+                db
+                    .insert(visitStats)
                     .values({ feedId: feed.id, pv: 1, hllData: new HyperLogLog().serialize() })
                     .onConflictDoUpdate({
                         target: visitStats.feedId,
@@ -375,11 +480,15 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
                 }
             }
             const stats = await profileAsync(c, "feed_detail_stats_read", () =>
-                db.query.visitStats.findFirst({ where: eq(visitStats.feedId, feed.id), columns: { pv: true, hllData: true } }),
+                db.query.visitStats.findFirst({
+                    where: eq(visitStats.feedId, feed.id),
+                    columns: { pv: true, hllData: true },
+                }),
             );
             pv = stats?.pv ?? 1;
             uv = stats ? Math.round(new HyperLogLog(stats.hllData).count()) : 1;
         }
+
         return c.json(stripSecrets({ ...other, hashtags: hashtags_flatten, pv, uv }));
     });
 
@@ -392,24 +501,41 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
             const aliasRecord = await profileAsync(c, "feed_adjacent_alias_lookup", () =>
                 db.select({ id: feeds.id }).from(feeds).where(eq(feeds.alias, id)),
             );
-            if (aliasRecord.length === 0) return c.text("Not found", 404);
+            if (aliasRecord.length === 0) {
+                return c.text("Not found", 404);
+            }
             id_num = aliasRecord[0].id;
         }
+
         const feed = await profileAsync(c, "feed_adjacent_current", () =>
-            db.query.feeds.findFirst({ where: eq(feeds.id, id_num), columns: { createdAt: true } }),
+            db.query.feeds.findFirst({
+                where: eq(feeds.id, id_num),
+                columns: { createdAt: true },
+            }),
         );
-        if (!feed) return c.text("Not found", 404);
+        if (!feed) {
+            return c.text("Not found", 404);
+        }
         const created_at = feed.createdAt;
-        function formatAndCacheData(row: any, feedDirection: "previous_feed" | "next_feed") {
+
+        const formatAndCacheData = (row: any, feedDirection: "previous_feed" | "next_feed") => {
             if (!row) return null;
             const hashtags_flatten = row.hashtags.map((f: any) => f.hashtag);
             const plainText = stripMarkdown(row.content);
             const summary = row.summary.length > 0 ? row.summary : plainText.length > 50 ? plainText.slice(0, 50) : plainText;
             const cacheKey = `adjacent_${feedDirection === "previous_feed" ? "prev" : "next"}_${id_num}`;
-            const cacheData = { id: row.id, title: row.title, summary, hashtags: hashtags_flatten, createdAt: row.createdAt, updatedAt: row.updatedAt };
+            const cacheData = {
+                id: row.id,
+                title: row.title,
+                summary,
+                hashtags: hashtags_flatten,
+                createdAt: row.createdAt,
+                updatedAt: row.updatedAt,
+            };
             cache.set(cacheKey, cacheData);
             return cacheData;
-        }
+        };
+
         const getPreviousFeed = async () => {
             const cachedPrev = await profileAsync(c, "feed_adjacent_prev_cache", () => cache.get(`adjacent_prev_${id_num}`));
             if (cachedPrev) return cachedPrev;
@@ -425,6 +551,7 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
             );
             return formatAndCacheData(temp, "previous_feed");
         };
+
         const getNextFeed = async () => {
             const cachedNext = await profileAsync(c, "feed_adjacent_next_cache", () => cache.get(`adjacent_next_${id_num}`));
             if (cachedNext) return cachedNext;
@@ -440,97 +567,123 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
             );
             return formatAndCacheData(temp, "next_feed");
         };
+
         const [previousFeed, nextFeed] = await Promise.all([getPreviousFeed(), getNextFeed()]);
         return c.json({ previousFeed, nextFeed });
     });
 
-    app.post("/:id", userOnly(withJsonBody<UpdateFeedRequest>(feedUpdateSchema, async (c, body) => {
-        const db = c.get("db");
-        const cache = c.get("cache");
-        const serverConfig = c.get("serverConfig");
-        const env = c.get("env");
-        const admin = c.get("admin");
-        const uid = c.get("uid")!;
-        const id = c.req.param("id");
-        const { title, listed, content, summary, alias, draft, top, tags, createdAt, password, encrypted } = body as any;
-        const id_num = parseFeedId(id);
-        if (id_num === null) return c.text("Not found", 404);
-        const feed = await profileAsync(c, "feed_update_lookup", () => findFeedById(db, id_num));
-        if (!feed) return c.text("Not found", 404);
-        if (feed.uid !== uid && !admin) return c.text("Permission denied", 403);
-        let pwd;
-        try {
-            pwd = await resolvePasswordFields(encrypted, password, feed);
-        } catch {
-            return c.text("Password required", 400);
-        }
-        const contentChanged = content && content !== feed.content;
-        const isDraft = draft !== undefined ? draft : feed.draft === 1;
-        const shouldQueueAISummary = (contentChanged && !isDraft) || (!isDraft && feed.draft === 1 && !feed.ai_summary);
-        const updateTime = new Date();
-        const listedFlag = isDraft || (encrypted && listed !== true) ? 0 : listed ? 1 : 0;
-        await profileAsync(c, "feed_update_db", () =>
-            updateFeedById(db, id_num, {
-                title,
-                content,
-                summary,
-                ai_summary: shouldQueueAISummary ? "" : undefined,
-                ai_summary_status: isDraft ? "idle" : undefined,
-                ai_summary_error: shouldQueueAISummary || isDraft ? "" : undefined,
-                alias,
-                top,
-                listed: listedFlag,
-                draft: draft === undefined ? undefined : draft ? 1 : 0,
-                passwordHash: pwd.passwordHash,
-                passwordSalt: pwd.passwordSalt,
-                createdAt: createdAt ? new Date(createdAt) : undefined,
-                updatedAt: updateTime,
+    app.post(
+        "/:id",
+        userOnly(
+            withJsonBody<UpdateFeedRequest>(feedUpdateSchema, async (c, body) => {
+                const db = c.get("db");
+                const cache = c.get("cache");
+                const serverConfig = c.get("serverConfig");
+                const env = c.get("env");
+                const admin = c.get("admin");
+                const uid = c.get("uid")!;
+                const id = c.req.param("id");
+                const { title, listed, content, summary, alias, draft, top, tags, createdAt, password, encrypted } = body as UpdateFeedRequest & {
+                    password?: string;
+                    encrypted?: boolean;
+                };
+
+                const id_num = parseFeedId(id);
+                if (id_num === null) return c.text("Not found", 404);
+                const feed = await profileAsync(c, "feed_update_lookup", () => findFeedById(db, id_num));
+                if (!feed) return c.text("Not found", 404);
+                if (feed.uid !== uid && !admin) return c.text("Permission denied", 403);
+
+                let pwd;
+                try {
+                    pwd = await resolvePasswordFields(encrypted, password, feed as any);
+                } catch {
+                    return c.text("Password required", 400);
+                }
+
+                const contentChanged = content && content !== feed.content;
+                const isDraft = draft !== undefined ? draft : feed.draft === 1;
+                const shouldQueueAISummary = (contentChanged && !isDraft) || (!isDraft && feed.draft === 1 && !feed.ai_summary);
+                const updateTime = new Date();
+                const listedFlag = isDraft || (encrypted && listed !== true) ? 0 : listed ? 1 : 0;
+
+                await profileAsync(c, "feed_update_db", () =>
+                    updateFeedById(db, id_num, {
+                        title,
+                        content,
+                        summary,
+                        ai_summary: shouldQueueAISummary ? "" : undefined,
+                        ai_summary_status: isDraft ? "idle" : undefined,
+                        ai_summary_error: shouldQueueAISummary || isDraft ? "" : undefined,
+                        alias,
+                        top,
+                        listed: listedFlag,
+                        draft: draft === undefined ? undefined : draft ? 1 : 0,
+                        passwordHash: pwd.passwordHash,
+                        passwordSalt: pwd.passwordSalt,
+                        createdAt: createdAt ? new Date(createdAt) : undefined,
+                        updatedAt: updateTime,
+                    } as any),
+                );
+
+                if (tags) {
+                    await profileAsync(c, "feed_update_tags", () => bindTagToPost(db, id_num, tags));
+                }
+                if (shouldQueueAISummary || isDraft) {
+                    await profileAsync(c, "feed_update_ai_queue", () =>
+                        syncFeedAISummaryQueueState(db, serverConfig, env, id_num, {
+                            draft: Boolean(isDraft),
+                            updatedAt: updateTime,
+                            resetSummary: shouldQueueAISummary,
+                        }),
+                    );
+                }
+                await profileAsync(c, "feed_update_cache_invalidate", () => clearFeedCache(cache, id_num, feed.alias, alias || null));
+                return c.text("Updated");
             }),
-        );
-        if (tags) await profileAsync(c, "feed_update_tags", () => bindTagToPost(db, id_num, tags));
-        if (shouldQueueAISummary || isDraft) {
-            await profileAsync(c, "feed_update_ai_queue", () =>
-                syncFeedAISummaryQueueState(db, serverConfig, env, id_num, {
-                    draft: Boolean(isDraft),
-                    updatedAt: updateTime,
-                    resetSummary: shouldQueueAISummary,
-                }),
-            );
-        }
-        await profileAsync(c, "feed_update_cache_invalidate", () => clearFeedCache(cache, id_num, feed.alias, alias || null));
-        return c.text("Updated");
-    }), { message: "Permission denied", status: 403 }));
+            { message: "Permission denied", status: 403 },
+        ),
+    );
 
-    app.post("/top/:id", userOnly(withJsonBody<{ top: number }>(feedSetTopSchema, async (c, body) => {
-        const db = c.get("db");
-        const cache = c.get("cache");
-        const admin = c.get("admin");
-        const uid = c.get("uid")!;
-        const id = c.req.param("id");
-        const id_num = parseFeedId(id);
-        if (id_num === null) return c.text("Not found", 404);
-        const feed = await profileAsync(c, "feed_top_lookup", () => findFeedById(db, id_num));
-        if (!feed) return c.text("Not found", 404);
-        if (feed.uid !== uid && !admin) return c.text("Permission denied", 403);
-        await profileAsync(c, "feed_top_db", () => updateFeedById(db, feed.id, { top: body.top }));
-        await profileAsync(c, "feed_top_cache_invalidate", () => clearFeedCache(cache, feed.id, feed.alias, feed.alias));
-        return c.text("Updated");
-    }), { message: "Permission denied", status: 403 }));
+    app.post(
+        "/top/:id",
+        userOnly(
+            withJsonBody<{ top: number }>(feedSetTopSchema, async (c, body) => {
+                const db = c.get("db");
+                const cache = c.get("cache");
+                const admin = c.get("admin");
+                const uid = c.get("uid")!;
+                const id = c.req.param("id");
+                const id_num = parseFeedId(id);
+                if (id_num === null) return c.text("Not found", 404);
+                const feed = await profileAsync(c, "feed_top_lookup", () => findFeedById(db, id_num));
+                if (!feed) return c.text("Not found", 404);
+                if (feed.uid !== uid && !admin) return c.text("Permission denied", 403);
+                await profileAsync(c, "feed_top_db", () => updateFeedById(db, feed.id, { top: body.top }));
+                await profileAsync(c, "feed_top_cache_invalidate", () => clearFeedCache(cache, feed.id, feed.alias, feed.alias));
+                return c.text("Updated");
+            }),
+            { message: "Permission denied", status: 403 },
+        ),
+    );
 
-    app.delete("/:id", userOnly(async (c, uid) => {
-        const db = c.get("db");
-        const cache = c.get("cache");
-        const admin = c.get("admin");
-        const id = c.req.param("id");
-        const id_num = parseFeedId(id);
-        if (id_num === null) return c.text("Not found", 404);
-        const feed = await profileAsync(c, "feed_delete_lookup", () => findFeedById(db, id_num));
-        if (!feed) return c.text("Not found", 404);
-        if (feed.uid !== uid && !admin) return c.text("Permission denied", 403);
-        await profileAsync(c, "feed_delete_db", () => deleteFeedById(db, id_num));
-        await profileAsync(c, "feed_delete_cache_invalidate", () => clearFeedCache(cache, id_num, feed.alias, null));
-        return c.text("Deleted");
-    }, { message: "Permission denied", status: 403 }));
+    app.delete(
+        "/:id",
+        userOnly(async (c, uid) => {
+            const db = c.get("db");
+            const cache = c.get("cache");
+            const admin = c.get("admin");
+            const id = c.req.param("id");
+            const id_num = parseFeedId(id);
+            if (id_num === null) return c.text("Not found", 404);
+            const feed = await profileAsync(c, "feed_delete_lookup", () => findFeedById(db, id_num));
+            if (!feed) return c.text("Not found", 404);
+            if (feed.uid !== uid && !admin) return c.text("Permission denied", 403);
+            await profileAsync(c, "feed_delete_db", () => deleteFeedById(db, id_num));
+            await profileAsync(c, "feed_delete_cache_invalidate", () => clearFeedCache(cache, id_num, feed.alias, null));
+            return c.text("Deleted");
+        }, { message: "Permission denied", status: 403 }),
+    );
 
     return app;
 }
@@ -544,15 +697,13 @@ export function SearchService(): Hono<{
         Variables: Variables;
     }>();
 
-    // GET /search/:keyword
-    app.get('/:keyword', async (c) => {
-        const db = c.get('db');
-        const cache = c.get('cache');
-        const admin = c.get('admin');
-        const page = c.req.query('page');
-        const limit = c.req.query('limit');
-        let keyword = c.req.param('keyword');
-
+    app.get("/:keyword", async (c) => {
+        const db = c.get("db");
+        const cache = c.get("cache");
+        const admin = c.get("admin");
+        const page = c.req.query("page");
+        const limit = c.req.query("limit");
+        let keyword = c.req.param("keyword");
         keyword = decodeURI(keyword);
         const page_num = parsePositiveInteger(page, 1) - 1;
         const limit_num = parsePositiveInteger(limit, 20, 50);
@@ -561,32 +712,31 @@ export function SearchService(): Hono<{
             return c.json({ size: 0, data: [], hasNext: false });
         }
 
-        const scope = admin ? 'admin' : 'public';
+        const scope = admin ? "admin" : "public";
         const cacheKey = `search_${scope}_${page_num}_${limit_num}_${encodeURIComponent(keyword)}`;
-        const result = await profileAsync(c, 'feed_search_cache_db', () => cache.getOrSet(cacheKey, async () => {
-            const pageResult = await searchFeedPage(db, {
-                keyword,
-                admin,
-                pageIndex: page_num,
-                limit: limit_num,
-            });
-            const data = pageResult.rows.map(({ content, hashtags, summary, ...other }: any) => {
-                const plainText = stripMarkdown(content);
-                return {
-                    summary: summary.length > 0 ? summary : plainText.length > 200 ? plainText.slice(0, 200) : plainText,
-                    hashtags: hashtags.map(({ hashtag }: any) => hashtag),
-                    ...other,
-                };
-            });
-
-            return { size: pageResult.size, data, hasNext: pageResult.hasNext };
-        }));
-
+        const result = await profileAsync(c, "feed_search_cache_db", () =>
+            cache.getOrSet(cacheKey, async () => {
+                const pageResult = await searchFeedPage(db, {
+                    keyword,
+                    admin,
+                    pageIndex: page_num,
+                    limit: limit_num,
+                });
+                const data = pageResult.rows.map(({ content, hashtags, summary, ...other }: any) => {
+                    const plainText = stripMarkdown(content);
+                    return {
+                        summary: summary.length > 0 ? summary : plainText.length > 200 ? plainText.slice(0, 200) : plainText,
+                        hashtags: hashtags.map(({ hashtag }: any) => hashtag),
+                        ...other,
+                    };
+                });
+                return { size: pageResult.size, data, hasNext: pageResult.hasNext };
+            }),
+        );
         return c.json(result);
     });
     return app;
 }
-
 
 export function WordPressService(): Hono<{
     Bindings: Env;
@@ -597,94 +747,92 @@ export function WordPressService(): Hono<{
         Variables: Variables;
     }>();
 
-    // POST /wp - WordPress import
-    app.post('/', adminOnly(async (c) => {
-        const db = c.get('db');
-        const cache = c.get('cache');
-        const body = await profileAsync(c, 'wp_import_parse', () => c.req.parseBody());
-        const data = body.data as File;
-
-        if (!data) {
-            return c.text('Data is required', 400);
-        }
-
-        // Initialize WordPress import modules lazily
-        await profileAsync(c, 'wp_import_modules', () => initWPModules());
-
-        const xml = await profileAsync(c, 'wp_import_read', () => data.text());
-        const parser = new XMLParser();
-        const result = await profileAsync(c, 'wp_import_xml_parse', () => parser.parse(xml));
-        const items = result.rss.channel.item;
-
-        if (!items) {
-            return c.text('No items found', 404);
-        }
-
-        const feedItems: FeedItem[] = items?.map((item: any) => {
-            const createdAt = new Date(item?.['wp:post_date']);
-            const updatedAt = new Date(item?.['wp:post_modified']);
-            const draft = item?.['wp:status'] !== 'publish';
-            const contentHtml = item?.['content:encoded'];
-            const content = html2md(contentHtml);
-            const summary = content.length > 100 ? content.slice(0, 100) : content;
-            let tags = item?.['category'];
-
-            if (tags && Array.isArray(tags)) {
-                tags = tags.map((tag: any) => tag + '');
-            } else if (tags && typeof tags === 'string') {
-                tags = [tags];
+    app.post(
+        "/",
+        adminOnly(async (c) => {
+            const db = c.get("db");
+            const cache = c.get("cache");
+            const body = await profileAsync(c, "wp_import_parse", () => c.req.parseBody());
+            const data = body.data as File;
+            if (!data) {
+                return c.text("Data is required", 400);
+            }
+            await profileAsync(c, "wp_import_modules", () => initWPModules());
+            const xml = await profileAsync(c, "wp_import_read", () => data.text());
+            const parser = new XMLParser();
+            const result = await profileAsync(c, "wp_import_xml_parse", () => parser.parse(xml));
+            const items = result.rss.channel.item;
+            if (!items) {
+                return c.text("No items found", 404);
             }
 
-            return {
-                title: item.title,
-                summary,
-                content,
-                draft,
-                createdAt,
-                updatedAt,
-                tags
-            };
-        });
+            const feedItems: FeedItem[] = items?.map((item: any) => {
+                const createdAt = new Date(item?.["wp:post_date"]);
+                const updatedAt = new Date(item?.["wp:post_modified"]);
+                const draft = item?.["wp:status"] !== "publish";
+                const contentHtml = item?.["content:encoded"];
+                const content = html2md(contentHtml);
+                const summary = content.length > 100 ? content.slice(0, 100) : content;
+                let tags = item?.["category"];
+                if (tags && Array.isArray(tags)) {
+                    tags = tags.map((tag: any) => tag + "");
+                } else if (tags && typeof tags === "string") {
+                    tags = [tags];
+                }
+                return {
+                    title: item.title,
+                    summary,
+                    content,
+                    draft,
+                    createdAt,
+                    updatedAt,
+                    tags,
+                };
+            });
 
-        let success = 0;
-        let skipped = 0;
-        let skippedList: { title: string, reason: string }[] = [];
+            let success = 0;
+            let skipped = 0;
+            const skippedList: { title: string; reason: string }[] = [];
 
-        for (const item of feedItems) {
-            if (!item.content) {
-                skippedList.push({ title: item.title, reason: "no content" });
-                skipped++;
-                continue;
+            for (const item of feedItems) {
+                if (!item.content) {
+                    skippedList.push({ title: item.title, reason: "no content" });
+                    skipped++;
+                    continue;
+                }
+                const exist = await profileAsync(c, "wp_import_existing", () =>
+                    db.query.feeds.findFirst({ where: eq(feeds.content, item.content) }),
+                );
+                if (exist) {
+                    skippedList.push({ title: item.title, reason: "content exists" });
+                    skipped++;
+                    continue;
+                }
+                const inserted = await profileAsync(c, "wp_import_insert", () =>
+                    db
+                        .insert(feeds)
+                        .values({
+                            title: item.title,
+                            content: item.content,
+                            summary: item.summary,
+                            uid: 1,
+                            listed: 1,
+                            draft: item.draft ? 1 : 0,
+                            createdAt: item.createdAt,
+                            updatedAt: item.updatedAt,
+                        })
+                        .returning({ insertedId: feeds.id }),
+                );
+                if (item.tags) {
+                    await profileAsync(c, "wp_import_tags", () => bindTagToPost(db, inserted[0].insertedId, item.tags!));
+                }
+                success++;
             }
 
-            const exist = await profileAsync(c, 'wp_import_existing', () => db.query.feeds.findFirst({ where: eq(feeds.content, item.content) }));
-            if (exist) {
-                skippedList.push({ title: item.title, reason: "content exists" });
-                skipped++;
-                continue;
-            }
-
-            const result = await profileAsync(c, 'wp_import_insert', () => db.insert(feeds).values({
-                title: item.title,
-                content: item.content,
-                summary: item.summary,
-                uid: 1,
-                listed: 1,
-                draft: item.draft ? 1 : 0,
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt
-            }).returning({ insertedId: feeds.id }));
-
-            if (item.tags) {
-                const tags = item.tags;
-                await profileAsync(c, 'wp_import_tags', () => bindTagToPost(db, result[0].insertedId, tags));
-            }
-            success++;
-        }
-
-        await profileAsync(c, 'wp_import_cache_invalidate', () => clearFeedCollectionCaches(cache));
-        return c.json({ success, skipped, skippedList });
-    }, { message: 'Permission denied', status: 403 }));
+            await profileAsync(c, "wp_import_cache_invalidate", () => clearFeedCollectionCaches(cache));
+            return c.json({ success, skipped, skippedList });
+        }, { message: "Permission denied", status: 403 }),
+    );
     return app;
 }
 
@@ -696,4 +844,4 @@ type FeedItem = {
     createdAt: Date;
     updatedAt: Date;
     tags?: string[];
-}
+};
