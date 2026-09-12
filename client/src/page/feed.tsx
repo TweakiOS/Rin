@@ -10,7 +10,8 @@ import { HashTag } from "../components/hashtag";
 import { ImageWithFallback } from "../components/image-with-fallback";
 import { Waiting } from "../components/loading";
 import { Markdown } from "../components/markdown";
-import { client } from "../app/runtime";
+import { VisibilityBadge } from "../components/visibility_badge";
+import { client, endpoint } from "../app/runtime";
 import { ClientConfigContext } from "../state/config";
 import { ProfileContext } from "../state/profile";
 import { useSiteConfig } from "../hooks/useSiteConfig";
@@ -20,20 +21,25 @@ import { Button } from "../components/button";
 import { Tips } from "../components/tips";
 import { AdjacentSection } from "../components/adjacent_feed.tsx";
 import { stripImageUrlMetadata } from "../utils/image-upload";
-import { VisibilityBadge } from "../components/visibility_badge";
 
 async function loadMermaid() {
   const module = await import("mermaid");
   return module.default;
 }
 
-function extractFirstMarkdownImageUrl(content: string) {
+function extractFirstMarkdownImageUrl(content?: string) {
+  if (!content) return undefined;
   const match = /!\[.*?\]\((\S+?)(?:\s+"[^"]*")?\)/.exec(content);
-  if (!match) {
-    return undefined;
-  }
-
+  if (!match) return undefined;
   return stripImageUrlMetadata(match[1]);
+}
+
+function applyFeed(data: Feed, setFeed: (v: Feed) => void, setTop: (v: number) => void, setHeadImage: (v?: string) => void, clean: (id: string) => void, id: string) {
+  setFeed(data);
+  setTop(data.top || 0);
+  const headImageUrl = extractFirstMarkdownImageUrl(data.content);
+  if (headImageUrl) setHeadImage(headImageUrl);
+  clean(id);
 }
 
 export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Element; clean: (id: string) => void }) {
@@ -43,6 +49,9 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
   const [feed, setFeed] = useState<Feed>();
   const [error, setError] = useState<string>();
   const [headImage, setHeadImage] = useState<string>();
+  const [locked, setLocked] = useState(false);
+  const [pwd, setPwd] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
   const ref = useRef("");
   const [, setLocation] = useLocation();
   const { showAlert, AlertUI } = useAlert();
@@ -61,9 +70,8 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
     showConfirm(t("article.delete.title"), t("article.delete.confirm"), () => {
       if (!feed) return;
       client.feed.delete(feed.id).then(({ error }) => {
-        if (error) {
-          showAlert(error.value as string);
-        } else {
+        if (error) showAlert(error.value as string);
+        else {
           showAlert(t("delete.success"));
           setLocation("/");
         }
@@ -80,9 +88,8 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
       () => {
         if (!feed) return;
         client.feed.setTop(feed.id, topNew).then(({ error }) => {
-          if (error) {
-            showAlert(error.value as string);
-          } else {
+          if (error) showAlert(error.value as string);
+          else {
             showAlert(isUnTop ? t("article.top.success") : t("article.untop.success"));
             setTop(topNew);
           }
@@ -91,24 +98,52 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
     );
   }
 
+  async function unlockFeed() {
+    if (!pwd || unlocking) return;
+    setUnlocking(true);
+    const { data, error } = await client.feed.unlock(id, { password: pwd });
+    setUnlocking(false);
+    if (data && !(data as any).locked && data.content) {
+      setLocked(false);
+      setError(undefined);
+      applyFeed(data, setFeed, setTop, setHeadImage, clean, id);
+      return;
+    }
+    showAlert(t("feed.password_wrong"));
+    void error;
+  }
+
   useEffect(() => {
     if (ref.current == id) return;
     setFeed(undefined);
     setError(undefined);
     setHeadImage(undefined);
-    client.feed.get(id).then(({ data, error }) => {
-      if (error) {
-        setError(error.value as string);
-      } else if (data && typeof data !== "string") {
-        setTimeout(() => {
-          setFeed(data as any);
-          setTop(data.top || 0);
-          const headImageUrl = extractFirstMarkdownImageUrl(data.content);
-          if (headImageUrl) {
-            setHeadImage(headImageUrl);
+    setLocked(false);
+    setPwd("");
+    client.feed.get(id).then(async ({ data, error }) => {
+      if (data && (data as any).locked) {
+        setLocked(true);
+        setFeed(data as any);
+        setError(undefined);
+        return;
+      }
+      if (error?.status === 403) {
+        try {
+          const res = await fetch(`${endpoint}/api/feed/${id}`, { credentials: "include" });
+          const body = await res.json();
+          if (body?.locked) {
+            setLocked(true);
+            setFeed(body);
+            setError(undefined);
+            return;
           }
-          clean(id);
-        }, 0);
+        } catch {}
+        setError(error.value as string);
+        return;
+      }
+      if (error) setError(error.value as string);
+      else if (data && typeof data !== "string") {
+        applyFeed(data as any, setFeed, setTop, setHeadImage, clean, id);
       }
     });
     ref.current = id;
@@ -120,35 +155,19 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
     let cancelled = false;
     loadMermaid().then((mermaid) => {
       if (cancelled) return;
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: "default",
+      mermaid.initialize({ startOnLoad: false, theme: "default" });
+      mermaid.run({ suppressErrors: true, nodes: document.querySelectorAll("pre.mermaid_default") }).then(() => {
+        if (cancelled) return;
+        mermaid.initialize({ startOnLoad: false, theme: "dark" });
+        mermaid.run({ suppressErrors: true, nodes: document.querySelectorAll("pre.mermaid_dark") });
       });
-      mermaid
-        .run({
-          suppressErrors: true,
-          nodes: document.querySelectorAll("pre.mermaid_default"),
-        })
-        .then(() => {
-          if (cancelled) return;
-          mermaid.initialize({
-            startOnLoad: false,
-            theme: "dark",
-          });
-          mermaid.run({
-            suppressErrors: true,
-            nodes: document.querySelectorAll("pre.mermaid_dark"),
-          });
-        });
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [feed]);
 
   return (
-    <Waiting for={feed || error}>
-      {feed && (
+    <Waiting for={feed || error || locked}>
+      {feed && !locked && (
         <Helmet>
           <title>{`${feed.title ?? "Unnamed"} - ${siteConfig.name}`}</title>
           <meta property="og:site_name" content={siteName} />
@@ -156,34 +175,45 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
           <meta property="og:image" content={headImage ?? siteConfig.avatar} />
           <meta property="og:type" content="article" />
           <meta property="og:url" content={document.URL} />
-          <meta
-            name="og:description"
-            content={feed.content.length > 200 ? feed.content.substring(0, 200) : feed.content}
-          />
-          <meta name="author" content={feed.user.username} />
-          <meta name="keywords" content={hashtags.map(({ name }) => name).join(", ")} />
-          <meta
-            name="description"
-            content={feed.content.length > 200 ? feed.content.substring(0, 200) : feed.content}
-          />
         </Helmet>
       )}
       <div className="flex w-full flex-row justify-center ani-show">
-        {error && (
+        {error && !locked && (
           <div className="mx-0 my-2 flex wauto flex-col items-center justify-center space-y-2 rounded-2xl bg-w px-3 py-3 sm:p-6">
             <h1 className="text-xl font-bold t-primary">{error}</h1>
             {error === "Not found" && id === "about" && <Tips value={t("about.notfound")} />}
             <Button title={t("index.back")} onClick={() => (window.location.href = "/")} />
           </div>
         )}
-        {feed && !error && (
+        {locked && (
+          <main className="wauto">
+            <div className="mx-0 my-2 rounded-2xl bg-w px-6 py-8">
+              <h1 className="text-2xl font-bold t-primary">{feed?.title || t("encrypted")}</h1>
+              <p className="mt-2 text-sm text-neutral-500">{t("feed.password_hint")}</p>
+              <input
+                type="password"
+                value={pwd}
+                onChange={(e) => setPwd(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void unlockFeed(); }}
+                placeholder={t("feed.password")}
+                className="mt-4 w-full rounded-xl border border-neutral-200 bg-transparent px-3 py-2 dark:border-neutral-700"
+              />
+              <button
+                type="button"
+                onClick={() => { void unlockFeed(); }}
+                disabled={unlocking}
+                className="mt-4 rounded-xl bg-theme px-5 py-2 text-white disabled:opacity-60"
+              >
+                {t("feed.unlock")}
+              </button>
+            </div>
+          </main>
+        )}
+        {feed && !error && !locked && (
           <>
             <div className="xl:w-64" />
             <main className="wauto min-w-0">
-              <article
-                className="mx-0 my-2 rounded-2xl bg-w px-3 py-3 sm:px-6 sm:py-4"
-                aria-label={feed.title ?? "Unnamed"}
-              >
+              <article className="mx-0 my-2 rounded-2xl bg-w px-3 py-3 sm:px-6 sm:py-4" aria-label={feed.title ?? "Unnamed"}>
                 <div className="flex justify-between">
                   <div>
                     <div className="mb-1 mt-1 flex items-center gap-1">
@@ -195,10 +225,14 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
                           {t("feed_card.updated$time", { time: timeago(feed.updatedAt) })}
                         </p>
                       )}
-                      <VisibilityBadge draft={(feed as any).draft} listed={(feed as any).listed} />
+                      <VisibilityBadge
+                        draft={(feed as any).draft}
+                        listed={(feed as any).listed}
+                        encrypted={(feed as any).encrypted}
+                      />
                     </div>
                     {counterEnabled && (
-                      <p className="text-[12px] font-normal text-gray-400 link-line">
+                      <p className="text-[12px] font-normal text-gray-400">
                         <span> {t("count.pv")} </span>
                         <span>{feed.pv}</span>
                         <span> |</span>
@@ -208,35 +242,18 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
                     )}
                     <div className="flex flex-row items-center">
                       <h1 className="break-all text-2xl font-bold t-primary">{feed.title}</h1>
-                      <div className="h-0 w-0 flex-1" />
                     </div>
                   </div>
                   <div className="pt-2">
                     {profile?.permission && (
                       <div className="flex gap-2">
-                        <button
-                          aria-label={top > 0 ? t("untop.title") : t("top.title")}
-                          onClick={topFeed}
-                          className={`flex flex-1 flex-col items-end justify-center rounded-full px-2 py transition ${
-                            top > 0
-                              ? "bg-theme text-white hover:bg-theme-hover active:bg-theme-active"
-                              : "bg-secondary bg-button dark:text-neutral-400"
-                          }`}
-                        >
+                        <button aria-label={top > 0 ? t("untop.title") : t("top.title")} onClick={topFeed} className={`flex flex-1 flex-col items-end justify-center rounded-full px-2 py ${top > 0 ? "bg-theme text-white" : "bg-secondary bg-button dark:text-neutral-400"}`}>
                           <i className="ri-skip-up-line" />
                         </button>
-                        <Link
-                          aria-label={t("edit")}
-                          href={`/admin/writing/${feed.id}`}
-                          className="flex flex-1 flex-col items-end justify-center rounded-full bg-secondary bg-button px-2 py transition"
-                        >
+                        <Link aria-label={t("edit")} href={`/admin/writing/${feed.id}`} className="flex flex-1 flex-col items-end justify-center rounded-full bg-secondary bg-button px-2 py">
                           <i className="ri-edit-2-line dark:text-neutral-400" />
                         </Link>
-                        <button
-                          aria-label={t("delete.title")}
-                          onClick={deleteFeed}
-                          className="flex flex-1 flex-col items-end justify-center rounded-full bg-secondary bg-button px-2 py transition"
-                        >
+                        <button aria-label={t("delete.title")} onClick={deleteFeed} className="flex flex-1 flex-col items-end justify-center rounded-full bg-secondary bg-button px-2 py">
                           <i className="ri-delete-bin-7-line text-red-500" />
                         </button>
                       </div>
@@ -245,47 +262,25 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
                 </div>
                 {(hasAISummary || showAISummaryState) && (
                   <div className="my-4 rounded-xl border border-purple-100 bg-gradient-to-r from-purple-50 to-blue-50 p-4 dark:border-purple-800/30 dark:from-purple-900/20 dark:to-blue-900/20">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <i className="ri-sparkling-2-fill text-purple-500" />
-                        <span className="text-sm font-medium text-purple-600 dark:text-purple-400">
-                          {t("ai_summary.title")}
-                        </span>
-                      </div>
-                      {showAISummaryState ? (
-                        <span className="rounded-full bg-white/70 px-2 py-1 text-xs font-medium text-purple-700 dark:bg-white/10 dark:text-purple-300">
-                          {t(`ai_summary.status.${feed.ai_summary_status}`)}
-                        </span>
-                      ) : null}
+                    <div className="mb-2 flex items-center gap-2">
+                      <i className="ri-sparkling-2-fill text-purple-500" />
+                      <span className="text-sm font-medium text-purple-600 dark:text-purple-400">{t("ai_summary.title")}</span>
                     </div>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed t-secondary [overflow-wrap:anywhere]">
+                    <p className="whitespace-pre-wrap text-sm t-secondary">
                       {hasAISummary ? feed.ai_summary : t(`ai_summary.message.${feed.ai_summary_status}`)}
                     </p>
-                    {feed.ai_summary_status === "failed" && feed.ai_summary_error ? (
-                      <p className="mt-2 whitespace-pre-wrap text-xs text-rose-600 dark:text-rose-300 [overflow-wrap:anywhere]">
-                        {feed.ai_summary_error}
-                      </p>
-                    ) : null}
                   </div>
                 )}
                 <Markdown content={feed.content} />
                 <div className="mt-6 flex flex-col gap-2">
                   {hashtags.length > 0 && (
                     <div className="flex flex-row flex-wrap gap-x-2">
-                      {hashtags.map(({ name }, index) => (
-                        <HashTag key={index} name={name} />
-                      ))}
+                      {hashtags.map(({ name }, index) => <HashTag key={index} name={name} />)}
                     </div>
                   )}
                   <div className="flex min-w-0 flex-row items-center">
-                    <ImageWithFallback
-                      src={feed.user.avatar || "/avatar.png"}
-                      alt={feed.user.username}
-                      className="h-8 w-8 rounded-full"
-                    />
-                    <div className="ml-2 min-w-0">
-                      <span className="block cursor-default truncate text-sm text-gray-400">{feed.user.username}</span>
-                    </div>
+                    <ImageWithFallback src={feed.user.avatar || "/avatar.png"} alt={feed.user.username} className="h-8 w-8 rounded-full" />
+                    <span className="ml-2 truncate text-sm text-gray-400">{feed.user.username}</span>
                   </div>
                 </div>
               </article>
@@ -294,9 +289,7 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
               <div className="h-16" />
             </main>
             <div className="relative hidden w-80 lg:block">
-              <div className="sticky start-0 end-0 top-[5.5rem]">
-                <TOC />
-              </div>
+              <div className="sticky start-0 end-0 top-[5.5rem]"><TOC /></div>
             </div>
           </>
         )}
