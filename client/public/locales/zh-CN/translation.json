@@ -250,6 +250,7 @@
   "listed": "列出在文章列表中",
   "listed_badge": "已列出",
   "encrypted": "加密",
+  "feed.encrypted_summary": "此文已加密",
   "feed.password": "访问密码",
   "feed.password_keep": "留空表示不修改密码",
   "feed.password_hint": "输入密码后查看正文",

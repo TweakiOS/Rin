@@ -1,30 +1,40 @@
+import { useContext } from "react";
 import { useTranslation } from "react-i18next";
+import { ProfileContext } from "../state/profile";
 
-export function getFeedVisibility(feed: {
-  draft?: number | boolean;
-  listed?: number | boolean;
-  encrypted?: boolean;
-}) {
-  if (feed.draft === 1 || feed.draft === true) return "draft" as const;
-  if (feed.encrypted) return "encrypted" as const;
-  if (feed.listed === 0 || feed.listed === false) return "unlisted" as const;
-  if (feed.listed === 1 || feed.listed === true) return "listed" as const;
-  return null;
-}
-
-export function VisibilityBadge(props: {
+export function VisibilityBadge({
+  draft,
+  listed,
+  encrypted,
+  className,
+}: {
   draft?: number | boolean;
   listed?: number | boolean;
   encrypted?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
-  const kind = getFeedVisibility(props);
-  if (!kind) return null;
-  const label =
-    kind === "draft" ? t("draft")
-    : kind === "encrypted" ? t("encrypted")
-    : kind === "unlisted" ? t("unlisted")
-    : t("listed_badge");
-  return <span className={props.className ?? "rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800"}>{label}</span>;
+  const profile = useContext(ProfileContext);
+  const isStaff = Boolean(profile?.permission || profile?.id);
+
+  const tags: string[] = [];
+  if (isStaff && (draft === 1 || draft === true)) tags.push(t("draft"));
+  if (isStaff && (listed === 0 || listed === false) && !(draft === 1 || draft === true)) {
+    tags.push(t("unlisted"));
+  }
+  if (encrypted) tags.push(t("encrypted"));
+  if (tags.length === 0) return null;
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      {tags.map((label) => (
+        <span
+          key={label}
+          className={className ?? "rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800"}
+        >
+          {label}
+        </span>
+      ))}
+    </span>
+  );
 }

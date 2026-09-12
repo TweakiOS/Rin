@@ -250,6 +250,7 @@
   "listed": "List in article feed",
   "listed_badge": "Listed",
   "encrypted": "Encrypted",
+  "feed.encrypted_summary": "This article is encrypted",
   "feed.password": "Password",
   "feed.password_keep": "Leave empty to keep current password",
   "feed.password_hint": "Enter password to view content",
