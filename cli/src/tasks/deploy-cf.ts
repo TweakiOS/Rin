@@ -27,7 +27,9 @@ const WORKER_SECRET_KEYS = [
   "RIN_GITHUB_CLIENT_SECRET",
   "S3_ACCESS_KEY_ID",
   "S3_SECRET_ACCESS_KEY",
-] as const;
+  "EMAIL_ALLOWED_SENDERS",
+  "EMAIL_PUBLISH_UID",
+]
 
 function isQueueAlreadyPresentError(stderr: string) {
   return stderr.includes("already exists") || stderr.includes("already taken") || stderr.includes("[code: 11009]");
