@@ -31,10 +31,7 @@ function FeedCardImage({ src, variant }: { src: string; variant: FeedCardVariant
     }, [blurhash, failed, loaded]);
 
     return (
-        <div
-            className={imageFrameClass}
-            style={{ aspectRatio: aspectRatio || "16 / 9" }}
-        >
+        <div className={imageFrameClass} style={{ aspectRatio: aspectRatio || "16 / 9" }}>
             {blurhash && !failed && !loaded ? (
                 <canvas
                     ref={canvasRef}
@@ -130,7 +127,7 @@ export function FeedCard({
             ) : null}
             <div className={activeVariant === "editorial" ? "px-2 pb-2" : ""}>
                 <h1 className={styles.title}>{title}</h1>
-                <p className={`space-x-2 ${styles.meta}`}>
+                <p className={`flex flex-wrap items-center gap-x-2 ${styles.meta}`}>
                     <span title={new Date(createdAt).toLocaleString()}>
                         {createdAt === updatedAt
                             ? timeago(createdAt)
@@ -141,11 +138,9 @@ export function FeedCard({
                             {t("feed_card.updated$time", { time: timeago(updatedAt) })}
                         </span>
                     )}
-                </p>
-                <p className={`space-x-2 ${styles.meta} ${activeVariant === "editorial" ? "mt-2" : ""}`}>
+                    {encrypted && <span>{t("encrypted")}</span>}
                     {draft === 1 && <span>{t("draft")}</span>}
                     {listed === 0 && <span>{t("unlisted")}</span>}
-                    {encrypted && <span>{t("encrypted")}</span>}
                     {top === 1 && <span className="text-theme">{t("article.top.title")}</span>}
                 </p>
                 <p

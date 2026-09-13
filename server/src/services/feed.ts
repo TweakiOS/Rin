@@ -36,7 +36,6 @@ import { bindTagToPost } from "./tag";
 import { clearFeedCache, clearFeedCollectionCaches } from "./clear-feed-cache";
 export { clearFeedCache } from "./clear-feed-cache";
 
-const ENCRYPTED_SUMMARY = "此文已加密";
 
 let XMLParser: any;
 let html2md: any;
@@ -151,7 +150,12 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
                         ? undefined
                         : { draft: false, listed: false, passwordSalt: false },
                     with: {
-                        hashtags: { columns: {}, with: { hashtag: { columns: { id: true, name: true } } } },
+                        hashtags: {
+                            columns: {},
+                            with: {
+                                hashtag: { columns: { id: true, name: true } },
+                            },
+                        },
                         user: { columns: { id: true, username: true, avatar: true } },
                     },
                     orderBy: [desc(feeds.top), desc(feeds.createdAt), desc(feeds.updatedAt)],
@@ -164,18 +168,18 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
             const canSee = Boolean(admin || other.uid === uid);
             const plainText = stripMarkdown(content);
             return {
-                summary:
-                    encrypted && !canSee
-                        ? "此文已加密"
-                        : summary.length > 0
-                          ? summary
-                          : plainText.length > 200
-                            ? plainText.slice(0, 200)
-                            : plainText,
+                ...other,
                 hashtags: hashtags.map(({ hashtag }: any) => hashtag),
                 avatar: encrypted && !canSee ? undefined : extractImageWithMetadata(content),
                 encrypted,
-                ...other,
+                summary:
+                    encrypted && !canSee
+                        ? c.text("feed.encrypted_summary")
+                        : summary.length > 0
+                            ? summary
+                            : plainText.length > 200
+                                ? plainText.slice(0, 200)
+                                : plainText,
             };
         });
 
@@ -363,7 +367,7 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
                 user: feed.user,
                 hashtags: [],
                 content: "",
-                summary: ENCRYPTED_SUMMARY,
+                summary: c.text("feed.encrypted_summary"),
                 pv: 0,
                 uv: 0,
             }, 403);
@@ -427,20 +431,24 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
         const scope = adjacentScope(admin, uid);
         const withTime = (cmp: ReturnType<typeof lt> | ReturnType<typeof gt>) => (scope ? and(scope, cmp) : cmp);
 
-        const formatAndCacheData = (row: any, cacheKey: string) => {
+        function formatAndCacheData(row: any, feedDirection: "previous_feed" | "next_feed") {
             if (!row) return null;
+            const encrypted = Boolean(row.passwordHash);
             const canSee = Boolean(admin || row.uid === uid);
             const plainText = stripMarkdown(row.content);
-            const summary = row.passwordHash && !canSee
-                ? ENCRYPTED_SUMMARY
-                : row.summary.length > 0
-                  ? row.summary
-                  : plainText.length > 50
-                    ? plainText.slice(0, 50)
-                    : plainText;
+            const summary =
+                encrypted && !canSee
+                    ? c.text("feed.encrypted_summary")
+                    : row.summary.length > 0
+                      ? row.summary
+                      : plainText.length > 50
+                        ? plainText.slice(0, 50)
+                        : plainText;
+            const cacheKey = `adjacent_${feedDirection === "previous_feed" ? "prev" : "next"}_${viewer}_${id_num}`;
             const cacheData = {
                 id: row.id,
                 title: row.title,
+                encrypted,
                 summary,
                 hashtags: row.hashtags.map((f: any) => f.hashtag),
                 createdAt: row.createdAt,
@@ -448,7 +456,7 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
             };
             cache.set(cacheKey, cacheData);
             return cacheData;
-        };
+        }
 
         const getPreviousFeed = async () => {
             const cacheKey = `adjacent_prev_${viewer}_${id_num}`;
