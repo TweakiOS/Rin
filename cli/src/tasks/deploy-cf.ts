@@ -155,10 +155,10 @@ export async function runCloudflareDeploy(target: "all" | "server" | "client" = 
     return;
   }
 
-  if (target !== "client") {
-    await buildServer();
-  }
-  
+  // `target === "client"` already returned above, so this point is only
+  // reachable with "all" / "server" — both need the server bundle built.
+  await buildServer();
+
   const dbName = renv("DB_NAME", "rin");
   const workerName = renv("WORKER_NAME", "rin-server");
   const taskQueueName = env("TASK_QUEUE_NAME", env("AI_SUMMARY_QUEUE_NAME", `${workerName}-tasks`)) ?? `${workerName}-tasks`;

@@ -19,10 +19,10 @@ CREATE TABLE IF NOT EXISTS `feed_hashtags` (
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `feeds` (
-    `id` integer PRIMARY KEY NOT NULL,
-    `alias` text,
-    `title` text,
-    `content` text NOT NULL,
+	`id` integer PRIMARY KEY NOT NULL,
+	`alias` text,
+	`title` text,
+	`content` text NOT NULL,
     `summary` text DEFAULT '' NOT NULL,
 	`listed` integer DEFAULT 1 NOT NULL,
 	`draft` integer DEFAULT 1 NOT NULL,
