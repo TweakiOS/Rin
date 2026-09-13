@@ -135,7 +135,18 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
                     ? admin
                         ? sql`${feeds.passwordHash} != ''`
                         : and(sql`${feeds.passwordHash} != ''`, eq(feeds.uid, uid!))
-                    : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+                    : (() => {
+                        // "normal" list: published & listed for everyone. Admins and
+                        // the signed-in author additionally see their own drafts so
+                        // drafts surface in the article list (badged "草稿") instead
+                        // of only inside the separate draft tab.
+                        if (admin) return or(eq(feeds.listed, 1), eq(feeds.draft, 1));
+                        if (uid) return or(
+                            and(eq(feeds.draft, 0), eq(feeds.listed, 1)),
+                            and(eq(feeds.draft, 1), eq(feeds.uid, uid)),
+                        );
+                        return and(eq(feeds.draft, 0), eq(feeds.listed, 1));
+                    })();
 
         const size = await profileAsync(c, "feed_list_count", () =>
             db.select({ count: count() }).from(feeds).where(where),
