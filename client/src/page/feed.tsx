@@ -193,6 +193,7 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
               <p className="mt-2 text-sm text-neutral-500">{t("feed.password_hint")}</p>
               <input
                 type="text"
+                name="feed-unlock-key"
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
