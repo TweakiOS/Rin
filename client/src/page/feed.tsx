@@ -106,7 +106,8 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
     if (data && !(data as any).locked && data.content) {
       setLocked(false);
       setError(undefined);
-      applyFeed(data, setFeed, setTop, setHeadImage, clean, id);
+      const again = await client.feed.get(id);
+      applyFeed(again.data && typeof again.data !== "string" ? again.data : data, setFeed, setTop, setHeadImage, clean, id);
       return;
     }
     showAlert(t("feed.password_wrong"));
