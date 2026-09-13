@@ -172,9 +172,10 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
                 hashtags: hashtags.map(({ hashtag }: any) => hashtag),
                 avatar: encrypted && !canSee ? undefined : extractImageWithMetadata(content),
                 encrypted,
+                canSee,
                 summary:
                     encrypted && !canSee
-                        ? c.text("feed.encrypted_summary")
+                        ? ""
                         : summary.length > 0
                             ? summary
                             : plainText.length > 200
@@ -438,7 +439,7 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
             const plainText = stripMarkdown(row.content);
             const summary =
                 encrypted && !canSee
-                    ? c.text("feed.encrypted_summary")
+                    ? ""
                     : row.summary.length > 0
                       ? row.summary
                       : plainText.length > 50
@@ -449,6 +450,7 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
                 id: row.id,
                 title: row.title,
                 encrypted,
+                canSee,
                 summary,
                 hashtags: row.hashtags.map((f: any) => f.hashtag),
                 createdAt: row.createdAt,

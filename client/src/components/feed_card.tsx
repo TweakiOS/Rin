@@ -88,6 +88,7 @@ export type FeedCardProps = {
     draft?: number;
     listed?: number;
     encrypted?: boolean;
+    canSee?: boolean;
     top?: number;
     title: string;
     summary: string;
@@ -105,6 +106,7 @@ export function FeedCard({
     draft,
     listed,
     encrypted,
+    canSee = false,
     top,
     summary,
     hashtags,
@@ -148,7 +150,7 @@ export function FeedCard({
                         activeVariant === "editorial" ? "mt-4" : ""
                     }`}
                 >
-                    {encrypted ? t("feed.encrypted_summary") : summary}
+                    {encrypted && !canSee ? t("feed.encrypted_summary") : summary}
                 </p>
                 {safeHashtags.length > 0 && (
                     <div
