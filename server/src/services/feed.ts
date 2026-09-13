@@ -313,7 +313,7 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
         const ok = await verifyFeedPassword((body as { password: string }).password, feed.passwordSalt, feed.passwordHash);
         if (!ok) return c.text("Wrong password", 403);
         const token = await unlockCookieValue(feed.id, feed.passwordHash);
-        c.header("Set-Cookie", `${unlockCookieName(feed.id)}=${token}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax`);
+        c.header("Set-Cookie", `${unlockCookieName(feed.id)}=${token}; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
         const { hashtags, ...other } = feed as any;
         return c.json(stripSecrets({
             ...other,
