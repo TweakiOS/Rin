@@ -106,10 +106,11 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
     if (data && !(data as any).locked && data.content) {
       setLocked(false);
       setError(undefined);
-      // Render straight from the unlock response. The unlock cookie is set
-      // with Max-Age=0 (never persisted), so the next GET /:id returns
-      // `locked` and the visitor must re-enter the password on every visit.
-      // Re-fetching here would re-lock the article, so we skip it.
+      // Render straight from the unlock response. The unlock cookie is a
+      // session cookie (no Max-Age), so it persists until the browser is
+      // closed: within the same session GET /:id returns the unlocked
+      // article, and only after the browser closes must the password be
+      // re-entered. Re-fetching here would defeat that, so we skip it.
       applyFeed(data as any, setFeed, setTop, setHeadImage, clean, id);
       return;
     }
