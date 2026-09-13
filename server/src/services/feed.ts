@@ -137,13 +137,15 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
                         : and(sql`${feeds.passwordHash} != ''`, eq(feeds.uid, uid!))
                     : (() => {
                         // "normal" list: published & listed for everyone. Admins and
-                        // the signed-in author additionally see their own drafts so
-                        // drafts surface in the article list (badged "草稿") instead
-                        // of only inside the separate draft tab.
-                        if (admin) return or(eq(feeds.listed, 1), eq(feeds.draft, 1));
+                        // the signed-in author additionally see their own drafts and
+                        // their own unlisted posts, so they surface in the article
+                        // list (badged "草稿" / "未列出") instead of only inside the
+                        // separate tab filters.
+                        if (admin) return or(eq(feeds.listed, 1), eq(feeds.draft, 1), eq(feeds.listed, 0));
                         if (uid) return or(
                             and(eq(feeds.draft, 0), eq(feeds.listed, 1)),
                             and(eq(feeds.draft, 1), eq(feeds.uid, uid)),
+                            and(eq(feeds.draft, 0), eq(feeds.listed, 0), eq(feeds.uid, uid)),
                         );
                         return and(eq(feeds.draft, 0), eq(feeds.listed, 1));
                     })();
