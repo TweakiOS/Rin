@@ -106,8 +106,11 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
     if (data && !(data as any).locked && data.content) {
       setLocked(false);
       setError(undefined);
-      const again = await client.feed.get(id);
-      applyFeed(again.data && typeof again.data !== "string" ? again.data : data, setFeed, setTop, setHeadImage, clean, id);
+      // Render straight from the unlock response. The unlock cookie is set
+      // with Max-Age=0 (never persisted), so the next GET /:id returns
+      // `locked` and the visitor must re-enter the password on every visit.
+      // Re-fetching here would re-lock the article, so we skip it.
+      applyFeed(data as any, setFeed, setTop, setHeadImage, clean, id);
       return;
     }
     showAlert(t("feed.password_wrong"));
