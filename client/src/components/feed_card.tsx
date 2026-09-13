@@ -141,8 +141,7 @@ export function FeedCard({
                         </span>
                     )}
                     {encrypted && <span>{t("encrypted")}</span>}
-                    {draft === 1 && <span>{t("draft")}</span>}
-                    {listed === 0 && <span>{t("unlisted")}</span>}
+                    {draft === 1 ? <span>{t("draft")}</span> : listed === 0 && <span>{t("unlisted")}</span>}
                     {top === 1 && <span className="text-theme">{t("article.top.title")}</span>}
                 </p>
                 <p
