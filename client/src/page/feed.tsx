@@ -191,7 +191,13 @@ export function FeedPage({ id, TOC, clean }: { id: string; TOC: () => JSX.Elemen
               <h1 className="text-2xl font-bold t-primary">{feed?.title || t("encrypted")}</h1>
               <p className="mt-2 text-sm text-neutral-500">{t("feed.password_hint")}</p>
               <input
-                type="password"
+                type="text"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                data-1p-ignore="true"
+                data-lpignore="true"
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void unlockFeed(); }}

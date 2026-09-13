@@ -316,8 +316,15 @@ export function WritingPage({ id }: { id?: number }) {
           </div>
           {encrypted && (
             <input
-              type="password"
-              autoComplete="new-password"
+              type="text"
+              name="feed-access-key"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-form-type="other"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={id ? t("feed.password_keep") : t("feed.password")}
