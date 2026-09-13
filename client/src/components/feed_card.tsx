@@ -8,7 +8,6 @@ import { parseImageUrlMetadata } from "../utils/image-upload";
 import { useImageLoadState } from "../utils/use-image-load-state";
 import { type FeedCardVariant, normalizeFeedCardVariant } from "./feed-card-options";
 import { useSiteConfig } from "../hooks/useSiteConfig";
-import { VisibilityBadge } from "./visibility_badge";
 
 function FeedCardImage({ src, variant }: { src: string; variant: FeedCardVariant }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,9 +19,6 @@ function FeedCardImage({ src, variant }: { src: string; variant: FeedCardVariant
             ? "relative flex max-h-80 w-full flex-row items-center overflow-hidden rounded-[20px]"
             : "relative mb-2 flex max-h-80 w-full flex-row items-center overflow-hidden rounded-xl";
 
-    // `loaded`/`failed` must stay in the dependency list: the canvas is only
-    // mounted while the image has not loaded yet, so it has to be repainted
-    // every time it comes back (e.g. after `src` changes reset `loaded`).
     useEffect(() => {
         if (!blurhash || failed || !canvasRef.current) {
             return;
@@ -37,7 +33,7 @@ function FeedCardImage({ src, variant }: { src: string; variant: FeedCardVariant
     return (
         <div
             className={imageFrameClass}
-            style={{ aspectRatio: aspectRatio || '16 / 9' }}
+            style={{ aspectRatio: aspectRatio || "16 / 9" }}
         >
             {blurhash && !failed && !loaded ? (
                 <canvas
@@ -59,33 +55,34 @@ function FeedCardImage({ src, variant }: { src: string; variant: FeedCardVariant
                 height={height}
                 onLoad={onLoad}
                 onError={onError}
-                className={`absolute inset-0 h-full w-full object-cover object-center hover:scale-105 translation duration-300 ${failed || (blurhash && !loaded) ? "opacity-0" : "opacity-100"
-                    }`}
+                className={`absolute inset-0 h-full w-full object-cover object-center hover:scale-105 translation duration-300 ${
+                    failed || (blurhash && !loaded) ? "opacity-0" : "opacity-100"
+                }`}
             />
         </div>
     );
 }
 
 const FEED_CARD_STYLES: Record<
-  FeedCardVariant,
-  { card: string; imageWrap: string; meta: string; summary: string; title: string }
+    FeedCardVariant,
+    { card: string; imageWrap: string; meta: string; summary: string; title: string }
 > = {
-  default: {
-    card: "my-1 inline-block w-full break-inside-avoid rounded-2xl bg-w p-2.5 duration-300 bg-button sm:my-2 sm:p-6",
-    imageWrap: "",
-    meta: "text-gray-400 text-sm",
-    summary: "line-clamp-4 text-pretty overflow-hidden dark:text-neutral-500",
-    title:
-      "break-words text-xl font-bold text-gray-700 dark:text-white text-pretty overflow-hidden [overflow-wrap:anywhere]",
-  },
-  editorial: {
-    card: "my-1 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl border border-black/10 bg-w p-2 shadow-[0_24px_60px_rgba(15,23,42,0.08)] transition-all hover:-translate-y-0.5 hover:shadow-[0_28px_70px_rgba(15,23,42,0.12)] dark:border-white/10 sm:my-2 sm:rounded-[28px] sm:p-3",
-    imageWrap: "mb-2 overflow-hidden rounded-xl border border-black/5 dark:border-white/10 sm:mb-3 sm:rounded-[22px]",
-    meta: "text-[12px] font-medium uppercase tracking-[0.18em] text-neutral-500 dark:text-neutral-400",
-    summary: "line-clamp-5 text-pretty text-[15px] leading-7 text-neutral-600 dark:text-neutral-300",
-    title:
-      "break-words text-2xl font-semibold tracking-[-0.02em] text-neutral-900 dark:text-white text-pretty overflow-hidden [overflow-wrap:anywhere]",
-  },
+    default: {
+        card: "my-1 inline-block w-full break-inside-avoid rounded-2xl bg-w p-2.5 duration-300 bg-button sm:my-2 sm:p-6",
+        imageWrap: "",
+        meta: "text-gray-400 text-sm",
+        summary: "line-clamp-4 text-pretty overflow-hidden dark:text-neutral-500",
+        title:
+            "break-words text-xl font-bold text-gray-700 dark:text-white text-pretty overflow-hidden [overflow-wrap:anywhere]",
+    },
+    editorial: {
+        card: "my-1 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl border border-black/10 bg-w p-2 shadow-[0_24px_60px_rgba(15,23,42,0.08)] transition-all hover:-translate-y-0.5 hover:shadow-[0_28px_70px_rgba(15,23,42,0.12)] dark:border-white/10 sm:my-2 sm:rounded-[28px] sm:p-3",
+        imageWrap: "mb-2 overflow-hidden rounded-xl border border-black/5 dark:border-white/10 sm:mb-3 sm:rounded-[22px]",
+        meta: "text-[12px] font-medium uppercase tracking-[0.18em] text-neutral-500 dark:text-neutral-400",
+        summary: "line-clamp-5 text-pretty text-[15px] leading-7 text-neutral-600 dark:text-neutral-300",
+        title:
+            "break-words text-2xl font-semibold tracking-[-0.02em] text-neutral-900 dark:text-white text-pretty overflow-hidden [overflow-wrap:anywhere]",
+    },
 };
 
 export type FeedCardProps = {
@@ -93,11 +90,11 @@ export type FeedCardProps = {
     avatar?: string;
     draft?: number;
     listed?: number;
+    encrypted?: boolean;
     top?: number;
     title: string;
     summary: string;
-    hashtags?: { id: number, name: string }[];
-    encrypted?: boolean;
+    hashtags?: { id: number; name: string }[];
     createdAt: Date;
     updatedAt: Date;
     preview?: boolean;
@@ -105,8 +102,20 @@ export type FeedCardProps = {
 };
 
 export function FeedCard({
-    id, title, avatar, draft, listed, encrypted, top, summary, hashtags, createdAt, updatedAt, preview = false, variant
-  }: FeedCardProps & { encrypted?: boolean }) {
+    id,
+    title,
+    avatar,
+    draft,
+    listed,
+    encrypted,
+    top,
+    summary,
+    hashtags,
+    createdAt,
+    updatedAt,
+    preview = false,
+    variant,
+}: FeedCardProps) {
     const { t } = useTranslation();
     const siteConfig = useSiteConfig();
     const safeHashtags = Array.isArray(hashtags) ? hashtags : [];
@@ -123,17 +132,15 @@ export function FeedCard({
                 <h1 className={styles.title}>{title}</h1>
                 <p className={`space-x-2 ${styles.meta}`}>
                     <span title={new Date(createdAt).toLocaleString()}>
-                        {createdAt === updatedAt ? timeago(createdAt) : t("feed_card.published$time", { time: timeago(createdAt) })}
+                        {createdAt === updatedAt
+                            ? timeago(createdAt)
+                            : t("feed_card.published$time", { time: timeago(createdAt) })}
                     </span>
                     {createdAt !== updatedAt && (
                         <span title={new Date(updatedAt).toLocaleString()}>
-                        {t("feed_card.updated$time", { time: timeago(updatedAt) })}
+                            {t("feed_card.updated$time", { time: timeago(updatedAt) })}
                         </span>
                     )}
-                    <VisibilityBadge draft={draft} listed={listed} encrypted={encrypted} />
-                </p>
-                <p className={`space-x-2 ${styles.meta}`}>
-                    {top === 1 && <span className="text-theme">{t("article.top.title")}</span>}
                 </p>
                 <p className={`space-x-2 ${styles.meta} ${activeVariant === "editorial" ? "mt-2" : ""}`}>
                     {draft === 1 && <span>{t("draft")}</span>}
@@ -141,20 +148,33 @@ export function FeedCard({
                     {encrypted && <span>{t("encrypted")}</span>}
                     {top === 1 && <span className="text-theme">{t("article.top.title")}</span>}
                 </p>
-                <p className={styles.summary}>
-                    {encrypted && !summary ? t("feed.encrypted_summary") : summary}
+                <p
+                    className={`whitespace-pre-line break-words [overflow-wrap:anywhere] ${styles.summary} ${
+                        activeVariant === "editorial" ? "mt-4" : ""
+                    }`}
+                >
+                    {encrypted ? t("feed.encrypted_summary") : summary}
                 </p>
-                <p className={`whitespace-pre-line break-words [overflow-wrap:anywhere] ${styles.summary} ${activeVariant === "editorial" ? "mt-4" : ""}`}>{summary}</p>
-                {safeHashtags.length > 0 &&
-                    <div className={`flex flex-row flex-wrap justify-start gap-2 ${activeVariant === "editorial" ? "mt-4" : "mt-2 gap-x-2"}`}>
+                {safeHashtags.length > 0 && (
+                    <div
+                        className={`flex flex-row flex-wrap justify-start gap-2 ${
+                            activeVariant === "editorial" ? "mt-4" : "mt-2 gap-x-2"
+                        }`}
+                    >
                         {safeHashtags.map(({ name }, index) => (
                             <HashTag key={index} name={name} />
                         ))}
                     </div>
-                }
+                )}
             </div>
         </div>
     );
 
-    return preview ? body : <Link href={`/feed/${id}`} target="_blank" rel="noopener noreferrer" className="block min-w-0 w-full">{body}</Link>;
+    return preview ? (
+        body
+    ) : (
+        <Link href={`/feed/${id}`} target="_blank" rel="noopener noreferrer" className="block min-w-0 w-full">
+            {body}
+        </Link>
+    );
 }

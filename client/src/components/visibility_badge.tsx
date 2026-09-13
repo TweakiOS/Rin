@@ -16,6 +16,9 @@ export function VisibilityBadge({
   const { t } = useTranslation();
   const profile = useContext(ProfileContext);
   const isStaff = Boolean(profile?.permission || profile?.id);
+  const pill =
+    className ??
+    "rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800";
 
   const tags: string[] = [];
   if (isStaff && (draft === 1 || draft === true)) tags.push(t("draft"));
@@ -28,10 +31,7 @@ export function VisibilityBadge({
   return (
     <span className="inline-flex items-center gap-1">
       {tags.map((label) => (
-        <span
-          key={label}
-          className={className ?? "rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800"}
-        >
+        <span key={label} className={pill}>
           {label}
         </span>
       ))}
