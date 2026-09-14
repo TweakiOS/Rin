@@ -487,7 +487,7 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
                     },
                 }),
             );
-            return formatAndCacheData(temp, cacheKey);
+            return formatAndCacheData(temp, "previous_feed");
         };
 
         const getNextFeed = async () => {
@@ -504,7 +504,7 @@ export function FeedService(): Hono<{ Bindings: Env; Variables: Variables }> {
                     },
                 }),
             );
-            return formatAndCacheData(temp, cacheKey);
+            return formatAndCacheData(temp, "next_feed");
         };
 
         const [previousFeed, nextFeed] = await Promise.all([getPreviousFeed(), getNextFeed()]);
