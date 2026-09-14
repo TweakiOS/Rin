@@ -50,6 +50,8 @@ export function createMockDB() {
             draft INTEGER DEFAULT 1 NOT NULL,
             top INTEGER DEFAULT 0 NOT NULL,
             uid INTEGER NOT NULL,
+            password_hash TEXT DEFAULT '' NOT NULL,
+            password_salt TEXT DEFAULT '' NOT NULL,
             created_at INTEGER DEFAULT (unixepoch()),
             updated_at INTEGER DEFAULT (unixepoch()),
             FOREIGN KEY (uid) REFERENCES users(id)

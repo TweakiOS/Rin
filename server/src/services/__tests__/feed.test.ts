@@ -388,7 +388,9 @@ describe('FeedService', () => {
             }, env);
 
             expect(res.status).toBe(400);
-            expect(await res.text()).toBe('Content is required');
+            // Empty content is rejected by the feedCreateSchema contract,
+            // which reports zod's validation message.
+            expect(await res.text()).toBe('content must not be empty');
         });
 
         it('should reject invalid contract field types before writing', async () => {
