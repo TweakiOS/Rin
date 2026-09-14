@@ -7,6 +7,14 @@ export const FEEDS_TABLE_EXISTS_QUERY =
   "SELECT name FROM sqlite_master WHERE type='table' AND name='feeds'";
 export const FEEDS_TOP_EXISTS_QUERY = "SELECT name FROM pragma_table_info('feeds') WHERE name='top'";
 export const ADD_FEEDS_TOP_COLUMN_SQL = "ALTER TABLE feeds ADD COLUMN top INTEGER DEFAULT 0 NOT NULL";
+export const FEEDS_PASSWORD_HASH_EXISTS_QUERY =
+  "SELECT name FROM pragma_table_info('feeds') WHERE name='password_hash'";
+export const FEEDS_PASSWORD_SALT_EXISTS_QUERY =
+  "SELECT name FROM pragma_table_info('feeds') WHERE name='password_salt'";
+export const ADD_FEEDS_PASSWORD_HASH_COLUMN_SQL =
+  "ALTER TABLE feeds ADD COLUMN password_hash TEXT DEFAULT '' NOT NULL";
+export const ADD_FEEDS_PASSWORD_SALT_COLUMN_SQL =
+  "ALTER TABLE feeds ADD COLUMN password_salt TEXT DEFAULT '' NOT NULL";
 
 export function getMigrationFileVersion(fileName: string) {
   const match = /^(\d+)(?:\D.*)?\.sql$/i.exec(fileName.trim());
@@ -95,6 +103,85 @@ export async function fixTopField(type: "local" | "remote", db: string) {
     ]);
   } else {
     console.log("Top field already exists in feeds table");
+  }
+}
+
+/**
+ * Idempotently ensure the feeds table carries the per-post password columns
+ * (password_hash / password_salt) used by the encryption feature.
+ *
+ * Unlike a plain `ALTER TABLE ... ADD COLUMN`, this checks pragma_table_info
+ * first, so it is safe to run on databases that already have the columns
+ * (e.g. a production D1 that was patched by hand) — it becomes a no-op instead
+ * of throwing "duplicate column name".
+ *
+ * The canonical columns also live in server/sql/0000.sql (feeds base schema),
+ * so brand-new databases created from the migrations get them for free; this
+ * helper only patches databases that predate that schema change.
+ */
+export async function ensureFeedPasswordColumns(type: "local" | "remote", db: string) {
+  const tableResult = await runWranglerJson([
+    "d1",
+    "execute",
+    db,
+    `--${type}`,
+    "--json",
+    "--command",
+    FEEDS_TABLE_EXISTS_QUERY,
+  ]);
+
+  if (tableResult[0].results.length === 0) {
+    console.log("Feeds table does not exist yet, skip password columns check");
+    return;
+  }
+
+  console.log("Checking password columns on feeds table");
+  const hashResult = await runWranglerJson([
+    "d1",
+    "execute",
+    db,
+    `--${type}`,
+    "--json",
+    "--command",
+    FEEDS_PASSWORD_HASH_EXISTS_QUERY,
+  ]);
+  if (hashResult[0].results.length === 0) {
+    console.log("Adding password_hash column to feeds table");
+    await runWranglerQuiet([
+      "d1",
+      "execute",
+      db,
+      `--${type}`,
+      "--json",
+      "--command",
+      ADD_FEEDS_PASSWORD_HASH_COLUMN_SQL,
+    ]);
+  } else {
+    console.log("password_hash column already exists in feeds table");
+  }
+
+  const saltResult = await runWranglerJson([
+    "d1",
+    "execute",
+    db,
+    `--${type}`,
+    "--json",
+    "--command",
+    FEEDS_PASSWORD_SALT_EXISTS_QUERY,
+  ]);
+  if (saltResult[0].results.length === 0) {
+    console.log("Adding password_salt column to feeds table");
+    await runWranglerQuiet([
+      "d1",
+      "execute",
+      db,
+      `--${type}`,
+      "--json",
+      "--command",
+      ADD_FEEDS_PASSWORD_SALT_COLUMN_SQL,
+    ]);
+  } else {
+    console.log("password_salt column already exists in feeds table");
   }
 }
 

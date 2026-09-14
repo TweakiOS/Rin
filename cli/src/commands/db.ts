@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { fixTopField } from "../lib/db-migration";
+import { ensureFeedPasswordColumns, fixTopField } from "../lib/db-migration";
 import { runLocalDbMigrate } from "../tasks/db-migrate-local";
 
 export async function runDbCommand(args: string[]) {
@@ -23,5 +23,10 @@ export async function runDbCommand(args: string[]) {
     return;
   }
 
-  console.log("Database commands:\n  rin db migrate\n  rin db fix-top-field");
+  if (subcommand === "fix-feed-password-columns") {
+    await ensureFeedPasswordColumns("local", dbName);
+    return;
+  }
+
+  console.log("Database commands:\n  rin db migrate\n  rin db fix-top-field\n  rin db fix-feed-password-columns");
 }

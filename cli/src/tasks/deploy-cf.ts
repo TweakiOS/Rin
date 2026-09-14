@@ -2,6 +2,7 @@ import { $ } from "bun";
 import { readdir, unlink } from "node:fs/promises";
 import stripIndent from "strip-indent";
 import {
+  ensureFeedPasswordColumns,
   fixTopField,
   getMigrationFileVersion,
   getMigrationVersion,
@@ -288,6 +289,9 @@ export async function runCloudflareDeploy(target: "all" | "server" | "client" = 
   const migrationVersion = await getMigrationVersion("remote", dbName);
   // Migration 0011 indexes feeds.top, so repair the column before pending SQL runs.
   await fixTopField("remote", dbName);
+  // Password columns live in the feeds base schema (0000.sql) for new databases;
+  // patch existing databases (incl. production D1 patched by hand) idempotently.
+  await ensureFeedPasswordColumns("remote", dbName);
   const files = await readdir("./server/sql", { recursive: false });
   const sqlFiles = files
     .filter((name) => name.endsWith(".sql"))

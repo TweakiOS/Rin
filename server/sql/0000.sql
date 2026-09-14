@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS `feeds` (
 	`uid` integer NOT NULL,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`password_hash` text DEFAULT '' NOT NULL,
+	`password_salt` text DEFAULT '' NOT NULL,
 	FOREIGN KEY (`uid`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint

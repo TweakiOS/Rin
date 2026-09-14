@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import {
+  ensureFeedPasswordColumns,
   fixTopField,
   getMigrationFileVersion,
   getMigrationVersion,
@@ -15,6 +16,9 @@ export async function runLocalDbMigrate(dbName = "rin") {
   const migrationVersion = await getMigrationVersion(type, dbName);
   // Migration 0011 indexes feeds.top, so repair the column before pending SQL runs.
   await fixTopField(type, dbName);
+  // Password columns live in the feeds base schema (0000.sql) for new databases;
+  // patch existing databases idempotently.
+  await ensureFeedPasswordColumns(type, dbName);
   const sqlFiles = fs
     .readdirSync(sqlDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
